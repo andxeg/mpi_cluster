@@ -1,4 +1,4 @@
-Папка с образами -> <вставить ссылку на google-диск>
+Папка с образами -> https://drive.google.com/open?id=1b4HjqNdH5K3QJ_OzFjaus8Mvfxgt0YXE
 
 В данной папке хранятся два образа:
 
@@ -33,18 +33,36 @@ Slave монтирует при каждом старте эту папку в �
    ssh_pwauth: True
    EOF
 
+В конфигурационный файл можно добавлять публичный ssh ключ:
+ $ cat > config.yaml << EOF
+   #cloud-config
+   package_upgrade: false
+   users:
+     - name: test_user
+       groups: wheel
+       lock_passwd: false
+       passwd: test_user
+       shell: /bin/bash
+       sudo: ['ALL=(ALL) NOPASSWD:ALL']
+       ssh-authorized-keys:
+         - <ssh public key>
+
  $ cloud-localds config-master.img config
- $ sudo virt-install --connect=qemu:///system \
+ $ sudo virt-install \
    --name master \
    --ram 1024 \
    --vcpus=1 \
    --os-type=linux \
    --os-variant=ubuntu16.04 \
+   --virt-type=kvm \
+   --hvm \
    --disk master.img,device=disk,bus=virtio \
    --disk config-master.img,device=cdrom \
-   --network name=default \
+   --network network=default \
    --graphics none \
-   --import  
+   --import \
+   --quiet \
+   --noautoconsole
 
  Все тоже самое нужно повторить для slave узлов
  $ sudo qemu-img create -f qcow2 -b xenial-server-cloudimg-amd64-disk1-slave.qcow2 slave.img
