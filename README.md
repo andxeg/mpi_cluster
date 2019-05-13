@@ -1,0 +1,217 @@
+# Brief Information
+This heat template based on https://github.com/frgaudet/openstack-heat-mpi
+
+Added to heat template NFS installation and setup shared directory for all nodes.
+Each node in cluster has user 'mpi' and shared directory 'nfs'.
+
+This template was checked with standard image of ubuntu\_16 and scientific linux 7.6 (image with preinstalled MPI was used, you can download this image from here -> https://yadi.sk/d/nbKT6kARcY6fXQ).
+
+Number of nodes in cluster is equal (count + 1), see commands below for example.
+
+Before start cluster check available resources in openstack nodes.
+
+For ubuntu min flavor is m1.small, for scilinux - m1.large.
+
+## Start cluster with ubuntu image
+
+`$ heat stack-create -f mpi.yaml -e lib/env.yaml -P "count=3;flavor=m1.small;key\_name=achupakhin;image\_id=ubuntu\_16;net\_id=internal\_net;name=mpi;public\_network=public1" mpi-stack`, where achupakhin is a key pair for ssh connect
+
+`$ ssh ubuntu@\<master node ip address\>`
+
+`ubuntu@master-node$ sudo su`
+
+`root@master-node# su - mpi`
+
+## Start cluster with scilinux image 
+`$ heat stack-create -f mpi.yaml -e lib/env.yaml -P "count=1;flavor=m1.large;key\_name=achupakhin;image\_id=scilinux\_7\_6\_64\_bit\_50Gb-image;net\_id=internal\_net;name=mpi-test;public\_network=public1" mpi-stack`
+
+`$ ssh cloud-user@\<master node ip address\>`
+
+`cloud-user@master-node$ sudo su`
+
+`root@master-node# su - mpi`
+
+For more details read instructions below.
+
+# Introduction
+
+This heat template allows you to easily deploy a mpi cluster on OpenStack.
+
+# Quick start
+1) Clone this repository :
+
+`git clone https://github.com/frgaudet/openstack-heat-mpi.git`
+
+2) Source your OpenStack environment file :
+
+`source openrc.sh`
+
+3) Prepare your parameters :
+
+	* key_name: Name of key-pair to be used
+	* image_id: Server image
+	* net_id: Private network id
+	* name: Prefix for all your instances's name
+
+4) Launch a Cluster :
+
+```
+cd openstack-heat-mpi
+heat stack-create -f mpi.yaml \
+	-e lib/env.yaml \
+	-P "key_name=fgaudet-key;image_id=Ubuntu Server 16.04 LTS (xenial);net_id=dev-net;name=fgaudet-mpi" mpi-stack
+```
+
+# Parameters
+
+There is at least 1 node, so if you specify count=4, then you'll have 5 nodes.
+
+For example, create a 5 nodes cluster, with a m1.xlarge flavor :
+
+```
+heat stack-create -f mpi.yaml \
+	-e lib/env.yaml \
+	-P "count=4;flavor=m1.xlarge;key_name=fgaudet-key;image_id=Ubuntu Server 16.04 LTS (xenial);net_id=fgaudet-net2;name=fgaudet-mpi" mpi-stack
+```
+
+Note the stack id :
+```
++--------------------------------------+------------+--------------------+---------------------+--------------+
+| id                                   | stack_name | stack_status       | creation_time       | updated_time |
++--------------------------------------+------------+--------------------+---------------------+--------------+
+| b7a7092c-876c-4c19-a8d3-47cb857a0ca6 | mpi-stack  | CREATE_IN_PROGRESS | 2016-08-31T09:28:39 | None         |
++--------------------------------------+------------+--------------------+---------------------+--------------+
+```
+
+# Check the master
+
+Get your cluster's public IP address using the stack id (see above):
+
+`heat output-show b7a7092c-876c-4c19-a8d3-47cb857a0ca6 public_ip`
+
+This command should return you something like this, with of course a real IP :
+```
++--------------+--------------------------------------------+
+| Property     | Value                                      |
++--------------+--------------------------------------------+
+| description  | The public IP address of this mpi cluster. |
+| output_key   | public_ip                                  |
+| output_value | "XXX.XXX.XXX.XXX"                          |
++--------------+--------------------------------------------+
+```
+
+Then, connect to your master, using this IP you've just find out :
+
+`ssh <username>@<IP>`
+
+Then login with the mpi user (via root):
+
+```
+ubuntu@fgaudet-mpi:~$ sudo su -
+root@fgaudet-mpi:~# su - mpi
+```
+
+and check your master :
+
+```
+wget http://svn.open-mpi.org/svn/ompi/tags/v1.6-series/v1.6.4/examples/connectivity_c.c
+mpicc connectivity_c.c -o connectivity
+mpirun ./connectivity
+```
+You should see the following output :
+```
+--------------------------------------------------------------------------
+[[30818,1],0]: A high-performance Open MPI point-to-point messaging module
+was unable to find any relevant network interfaces:
+
+Module: OpenFabrics (openib)
+  Host: fgaudet-mpi
+
+Another transport will be used instead, although this may result in
+lower performance.
+--------------------------------------------------------------------------
+Connectivity test on 1 processes PASSED.
+
+```
+
+Ok now we'll have a running mpi master, let's try out now a real application !
+
+# Run simple ray-tracing application
+
+The following steps were inspired from [here](https://support.rackspace.com/how-to/high-performance-computing-cluster-in-a-cloud-environment/ "Rackspace How to")
+
+## Get application
+`wget http://jedi.ks.uiuc.edu/~johns/raytracer/files/0.99b2/tachyon-0.99b2.tar.gz -O /tmp/tachyon.tar.gz`
+
+## Deploy on every node
+```
+for i in $(cat mpi_hosts)
+do
+echo "Copying to ${i}"
+scp -r /tmp/tachyon.tar.gz ${i}:/home/mpi/
+echo "Compiling tachyon on ${i}"
+ssh ${i} "tar -zxf /home/mpi/tachyon.tar.gz ;cd /home/mpi/tachyon/unix;make linux-mpi"
+done
+```
+
+## Run the application on one node
+```
+cd ~/tachyon/compile/linux-mpi
+./tachyon ../../scenes/teapot.dat -format BMP
+```
+You get the following output :
+
+```
+--------------------------------------------------------------------------
+[[31156,1],0]: A high-performance Open MPI point-to-point messaging module
+was unable to find any relevant network interfaces:
+
+Module: OpenFabrics (openib)
+  Host: fgaudet-mpi
+
+Another transport will be used instead, although this may result in
+lower performance.
+--------------------------------------------------------------------------
+Tachyon Parallel/Multiprocessor Ray Tracer   Version 0.99
+Copyright 1994-2011,    John E. Stone <john.stone@gmail.com>
+------------------------------------------------------------
+Scene Parsing Time:     0.0192 seconds
+Scene contains 2330 objects.
+Preprocessing Time:     0.0026 seconds
+Rendering Progress:       100% complete
+  Ray Tracing Time:     0.7833 seconds
+    Image I/O Time:     0.0061 seconds
+```
+
+## Run with 4 nodes
+```
+cd ~/tachyon/compile/linux-mpi
+mpirun -np 4 --hostfile ~/mpi_hosts ./tachyon ../../scenes/teapot.dat -format BMP
+```
+
+You get the following output :
+
+```
+Warning: Permanently added '10.0.0.96' (ECDSA) to the list of known hosts.
+Warning: Permanently added '10.0.0.95' (ECDSA) to the list of known hosts.
+Warning: Permanently added '10.0.0.97' (ECDSA) to the list of known hosts.
+--------------------------------------------------------------------------
+[[31165,1],0]: A high-performance Open MPI point-to-point messaging module
+was unable to find any relevant network interfaces:
+
+Module: OpenFabrics (openib)
+  Host: fgaudet-mpi
+
+Another transport will be used instead, although this may result in
+lower performance.
+--------------------------------------------------------------------------
+Tachyon Parallel/Multiprocessor Ray Tracer   Version 0.99
+Copyright 1994-2011,    John E. Stone <john.stone@gmail.com>
+------------------------------------------------------------
+Scene Parsing Time:     0.0190 seconds
+Scene contains 2330 objects.
+Preprocessing Time:     0.0027 seconds
+Rendering Progress:       100% complete
+  Ray Tracing Time:     0.2543 seconds
+    Image I/O Time:     0.0050 seconds
+```
