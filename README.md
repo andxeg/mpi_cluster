@@ -12,24 +12,38 @@ Before start cluster check available resources in openstack nodes.
 
 For ubuntu min flavor is m1.small, for scilinux - m1.large.
 
+## Prerequisites
+Ssh to Openstack control node:
+
+`ssh -> 172.30.10.30 soc:s0c`
+
+Source Openstack environment file:
+
+`source /etc/kolla/admin-openrc.sh`
+
 ## Start cluster with ubuntu image
 
-`$ heat stack-create -f mpi.yaml -e lib/env.yaml -P "count=3;flavor=m1.small;key\_name=achupakhin;image\_id=ubuntu\_16;net\_id=internal\_net;name=mpi;public\_network=public1" mpi-stack`, where achupakhin is a key pair for ssh connect
+```bash
+$ heat stack-create -f mpi.yaml -e lib/env.yaml -P "count=3;flavor=m1.small;key_name=achupakhin;image_id=ubuntu_16;net_id=internal_net;name=mpi;public_network=public1" mpi-stack
+```
+where `achupakhin` is a key pair for ssh connect to master node
 
-`$ ssh ubuntu@\<master node ip address\>`
-
-`ubuntu@master-node$ sudo su`
-
-`root@master-node# su - mpi`
+```bash
+some-PC$ ssh ubuntu@<master node ip address>
+ubuntu@master-node$ sudo su
+root@master-node# su - mpi
+```
 
 ## Start cluster with scilinux image 
-`$ heat stack-create -f mpi.yaml -e lib/env.yaml -P "count=1;flavor=m1.large;key\_name=achupakhin;image\_id=scilinux\_7\_6\_64\_bit\_50Gb-image;net\_id=internal\_net;name=mpi-test;public\_network=public1" mpi-stack`
+```bash
+$ heat stack-create -f mpi.yaml -e lib/env.yaml -P "count=1;flavor=m1.large;key_name=achupakhin;image_id=scilinux_7_6_64_bit_50Gb-image;net_id=internal_net;name=mpi-test;public_network=public1" mpi-stack
+```
 
-`$ ssh cloud-user@\<master node ip address\>`
-
-`cloud-user@master-node$ sudo su`
-
-`root@master-node# su - mpi`
+```bash
+some-PC$ ssh cloud-user@<master node ip address>
+cloud-user@master-node$ sudo su
+root@master-node# su - mpi
+```
 
 For more details read instructions below.
 
