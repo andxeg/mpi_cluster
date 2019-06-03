@@ -8,7 +8,8 @@ MPI кластер состоит из master узла и N slave узлов.
 MPI кластер. Для этого нужно заранее сформировать список из
 IP адресов каждой виртуальной машине в кластере и представить
 его в следующем виде:
-    <master node IP address>,<slave1 node IP address>, ...,<slaveN node IP address>
+
+`<master node IP address>,<slave1 node IP address>, ...,<slaveN node IP address>`
 
 Далее по ssh нужно зайти на каждый узел MPI кластера и запустить
 из папки scripts скрипт node\_setup.sh с двумя параметрами:
