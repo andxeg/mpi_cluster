@@ -31,3 +31,22 @@ done
 
 sudo virsh list --all
 
+# DELETE BRIDGES
+VXLAN_ID_START=40
+
+for (( i = 0; i <= $N; i++ ))
+do
+    vxlan=$((VXLAN_ID_START+i))
+    vxlan_iface="vxlan"$vxlan
+    vxlan_bridge="br-vxlan"$vxlan
+
+    printf "Delete bridge '%s'\n" $vxlan_bridge
+
+    sudo ip link set $vxlan_bridge down
+    sudo ip link delete $vxlan_bridge
+    sudo ip link delete $vxlan_iface  
+done
+
+# show info about bridges
+sudo brctl show
+

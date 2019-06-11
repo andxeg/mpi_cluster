@@ -13,9 +13,12 @@ VXLAN_BRIDGE="br-vxlan"$VXLAN
 
 printf "%s; %s; %s\n" "$VXLAN" "$VXLAN_IFACE" "$VXLAN_BRIDGE"
 
-DEV="eth0"
-LOCAL_IP="192.168.131.36"
-REMOTE_IP="172.30.11.100"
+DEV="br-ext"
+LOCAL_IP="172.30.11.100"
+REMOTE_IP="192.168.131.36"
+##DEV="eth0"
+##LOCAL_IP="192.168.131.36"
+##REMOTE_IP="172.30.11.100"
 
 sudo ip link add name $VXLAN_IFACE type vxlan id $VXLAN dev $DEV remote $REMOTE_IP local $LOCAL_IP dstport 4789
 sudo ip link add $VXLAN_BRIDGE type bridge
