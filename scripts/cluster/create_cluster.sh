@@ -135,6 +135,7 @@ do
     cluster_ip=${CLUSTER_HOSTS[$i]}
 
     # set ip address to cluster net interface
+    ssh-keygen -f "/home/"$USER"/.ssh/known_hosts" -R "$addr"
     sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su -c \" printf '\nauto %s\niface %s inet static\naddress %s\nnetmask 255.255.255.0\n' $CLUSTER_IFACE $CLUSTER_IFACE $cluster_ip >> $CLUSTER_IFACE_CONFIG && ifup $CLUSTER_IFACE && ifconfig $CLUSTER_IFACE mtu 1450\""
 done 
 
