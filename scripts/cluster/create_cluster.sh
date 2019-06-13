@@ -20,6 +20,7 @@ REMOTE_IP="192.168.131.36" # remote server with ovs or linux bridge
 
 CLUSTER_NET="10.0.0."
 CLUSTER_IFACE="ens3"
+CLUSTER_IFACE_CONFIG="/etc/network/interfaces.d/50-cloud-init.cfg"
 
 N=$1
 NODES="master"
@@ -107,7 +108,7 @@ echo "IP ADDRESSES -> "$IP_ADDRESSES
 CLUSTER_IP_ADDRESSES="10.0.0.2"
 for (( i = 1; i <= $N; i++ ))
 do
-    CLUSTER_IP_ADDRESSES+=",""$CLUSTER_NET""$((i+2))"
+    CLUSTER_IP_ADDRESSES+=" ""$CLUSTER_NET""$((i+2))"
 done
 
 echo "CLUSTER_IP_ADDRESSES -> ""$CLUSTER_IP_ADDRESSES"
@@ -115,23 +116,38 @@ echo "CLUSTER_IP_ADDRESSES -> ""$CLUSTER_IP_ADDRESSES"
 IFS=" "
 read -ra HOSTS <<< "$IP_ADDRESSES"
 read -ra NODES_ARRAY <<< "$NODES"
+read -ra CLUSTER_HOSTS <<< "$CLUSTER_IP_ADDRESSES"
 
-HOSTS_COMMAS="${HOSTS[0]}"
-for (( i = 1; i < "${#HOSTS[@]}"; i++ ))
+CLUSTER_IP_ADDRESSES_COMMA="${CLUSTER_HOSTS[0]}"
+for (( i = 1; i < "${#CLUSTER_HOSTS[@]}"; i++ ))
 do
-    HOSTS_COMMAS+=",""${HOSTS[$i]}"
+    CLUSTER_IP_ADDRESSES_COMMA+=",""${CLUSTER_HOSTS[$i]}"
 done
 
-echo "HOSTS_COMMAS -> ""$HOSTS_COMMAS"
+echo "CLUSTER_IP_ADDRESSES_COMMA -> ""$CLUSTER_IP_ADDRESSES_COMMA"
 
-exit 1 # TODO add to node_setup.sh CLUSTER_IP_ADDRESSES and set ip_address to $CLUSTER_IFACE 
+
+# configure cluster interfaces
+for (( i = 0; i < "${#HOSTS[@]}"; i++ ))
+do
+    name=${NODES_ARRAY[$i]}
+    addr=${HOSTS[$i]}
+    cluster_ip=${CLUSTER_HOSTS[$i]}
+
+    # set ip address to cluster net interface
+    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su -c \" printf '\nauto %s\niface %s inet static\naddress %s\nnetmask 255.255.255.0\n' $CLUSTER_IFACE $CLUSTER_IFACE $cluster_ip >> $CLUSTER_IFACE_CONFIG && ifup $CLUSTER_IFACE && ifconfig $CLUSTER_IFACE mtu 1450\""
+done 
 
 for (( i = 0; i < "${#HOSTS[@]}"; i++ ))
 do
     name=${NODES_ARRAY[$i]}
     addr=${HOSTS[$i]}
-    echo "HOST[""$i""]: NAME = "$name", IP = ""$addr"
-    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su - mpiuser -c \"cd /home/mpiuser/scripts && sudo ./node_setup.sh $name $HOSTS_COMMAS\""
+    cluster_ip=${CLUSTER_HOSTS[$i]}
+
+    echo "HOST[""$i""]: NAME = "$name", IP = ""$addr"", CLUSTER_IP = ""$cluster_ip"
+
+    ssh-keygen -f "/home/"$USER"/.ssh/known_hosts" -R "$addr"
+    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su - mpiuser -c \"cd /home/mpiuser/scripts && sudo ./node_setup.sh $name $CLUSTER_IP_ADDRESSES_COMMA \""
 
     # NOTE hostname changing command you should add to node_setup.sh
     sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su -c \"hostname $name && echo $name > /etc/hostname\""

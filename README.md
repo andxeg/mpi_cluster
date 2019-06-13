@@ -31,7 +31,7 @@ $ mpirun -np <number of processes> -hosts <list with domain names of cluster nod
 
 
 # Создание MPI кластера из N+1 виртуальной машины (автоматический способ)
-
+См. `README.md` в `./scripts/cluster`.
 
 # Примеры MPI программ
 В папке tests можно найти примеры MPI программ, который запускались и проверялись
