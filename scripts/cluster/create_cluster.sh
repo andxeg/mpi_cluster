@@ -1,8 +1,9 @@
 #!/bin/bash
 
-if [ $# -ne 1 ]; then
+if [ $# -ne 4 ]; then
     printf "error in input parameters\n"
-    printf "type %s <number of slaves>\n" "$0"
+    printf "type %s <number of slaves> <start_vxlan_id> <suffix for node name> <start ip addresses in subnet 10.0.0.0/24>\n" "$0"
+    printf "Example: ./create_cluster.sh 2 56 '-second' 18\n"
     exit 1
 fi
 
@@ -13,7 +14,7 @@ BASE_CONFIG="/home/arccn/images/config"
 CONFIG_DIR="./config"
 IMAGES_DIR="./images"
 
-VXLAN_ID_START=40
+VXLAN_ID_START=$2 # for example 40
 DEV="br-ext"
 LOCAL_IP="172.30.11.100"   # local server with virtual machines
 REMOTE_IP="192.168.131.36" # remote server with ovs or linux bridge
@@ -21,14 +22,16 @@ REMOTE_IP="192.168.131.36" # remote server with ovs or linux bridge
 CLUSTER_NET="10.0.0."
 CLUSTER_IFACE="ens3"
 CLUSTER_IFACE_CONFIG="/etc/network/interfaces.d/50-cloud-init.cfg"
+CONFIG_SCRIPT="node_setup.sh" # script for configuring cluster nodes
 
 N=$1
-NODES="master"
+SUFFIX="$3" # for example "-1", "-first", "-second"
+NODES="master""$SUFFIX"
 
 # GENERATE NODE NAMES
 for ((i=1; i <= $N; i++))
 do
-    NODES+=" slave"$i 
+    NODES+=" slave""$SUFFIX""-"$i
 done
 
 
@@ -42,7 +45,7 @@ LANG=en_US
 for node in $NODES
 do
     image="master"
-    if [ "$node" != "master" ] ; then
+    if [ "$node" != "master""$SUFFIX" ] ; then
         image="slave"
     fi
 
@@ -63,13 +66,13 @@ do
     printf "bridge '%s' was created\n" "$vxlan_bridge"
 
     # create virtual machine
-    printf "%s creation was started\n" "$node"
+    printf "'%s' creation was started with image '%s'\n" "$node" "$image"
 
     cloud-localds $CONFIG_DIR/"config-""$node"".img" $BASE_CONFIG
     qemu-img create -f qcow2 -b $VM_IMAGE_PREFIX"$image"".qcow2" $IMAGES_DIR/"$node"".img"
     sudo virt-install --name $node --ram 1024 --vcpus=1 --os-type=linux --os-variant=ubuntu16.04 --virt-type=kvm --hvm --disk $IMAGES_DIR/"$node"".img",device=disk,bus=virtio --disk $CONFIG_DIR/"config-""$node"".img",device=cdrom --network network=default --network bridge="$vxlan_bridge" --graphics none --import --quiet --noautoconsole
 
-    printf "%s was created\n\n" "$node"
+    printf "'%s' was created\n\n" "$node"
 done
 
 # show info about bridges
@@ -88,16 +91,15 @@ sudo virsh list --all
 
 # =================== CONFIGURE NODES =====================
 printf "Nodes configuration was started\n"
-NAMES=$(sudo virsh list --name)
 IP_ADDRESSES=""
 
-for n in $NAMES
+for n in $NODES
 do 
-    if [ "$(echo "$NODES" | grep -w "$n")" == "" ]
-    then
-        echo "NOT CLUSTER NODE -> ""$n"
-        continue
-    fi
+##    if [ "$(echo "$NODES" | grep -w "$n")" == "" ]
+##    then
+##        echo "NOT CLUSTER NODE -> ""$n"
+##        continue
+##    fi
 
     IP_ADDRESSES+=" "$( echo $([[ ! -z $n ]] && sudo virsh domifaddr $n) | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}')
 done
@@ -105,10 +107,10 @@ done
 echo "IP ADDRESSES -> "$IP_ADDRESSES
 
 # SSH TO NODES AND START CONFIGURE
-CLUSTER_IP_ADDRESSES="10.0.0.2"
+CLUSTER_IP_ADDRESSES="$CLUSTER_NET""$4"
 for (( i = 1; i <= $N; i++ ))
 do
-    CLUSTER_IP_ADDRESSES+=" ""$CLUSTER_NET""$((i+2))"
+    CLUSTER_IP_ADDRESSES+=" ""$CLUSTER_NET""$(($4+i))"
 done
 
 echo "CLUSTER_IP_ADDRESSES -> ""$CLUSTER_IP_ADDRESSES"
@@ -137,6 +139,10 @@ do
     # set ip address to cluster net interface
     ssh-keygen -f "/home/"$USER"/.ssh/known_hosts" -R "$addr"
     sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su -c \" printf '\nauto %s\niface %s inet static\naddress %s\nnetmask 255.255.255.0\n' $CLUSTER_IFACE $CLUSTER_IFACE $cluster_ip >> $CLUSTER_IFACE_CONFIG && ifup $CLUSTER_IFACE && ifconfig $CLUSTER_IFACE mtu 1450\""
+
+    # copy to each cluster node configuration script
+    sshpass -p "ubuntu" scp $CONFIG_SCRIPT ubuntu@"$addr":/tmp
+    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su -c \"chown mpiuser:mpiuser /tmp/$CONFIG_SCRIPT\" && sudo su - mpiuser -c \"mv /tmp/$CONFIG_SCRIPT /home/mpiuser/scripts/\""
 done 
 
 for (( i = 0; i < "${#HOSTS[@]}"; i++ ))
@@ -148,10 +154,11 @@ do
     echo "HOST[""$i""]: NAME = "$name", IP = ""$addr"", CLUSTER_IP = ""$cluster_ip"
 
     ssh-keygen -f "/home/"$USER"/.ssh/known_hosts" -R "$addr"
-    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su - mpiuser -c \"cd /home/mpiuser/scripts && sudo ./node_setup.sh $name $CLUSTER_IP_ADDRESSES_COMMA \""
 
-    # NOTE hostname changing command you should add to node_setup.sh
+    # NOTE hostname changing command you should add to $CONFIG_SCRIPT
     sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su -c \"hostname $name && echo $name > /etc/hostname\""
+
+    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su - mpiuser -c \"cd /home/mpiuser/scripts && sudo "./""$CONFIG_SCRIPT" $name $SUFFIX $CLUSTER_IP_ADDRESSES_COMMA \""
 
 done
 
