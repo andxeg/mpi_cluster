@@ -76,8 +76,13 @@ if echo "$NODE_TYPE" | grep -qw "master"; then
 else
     printf "Specific steps for %s node\n" $NODE_TYPE
     # For slave node
-    # Change hostname to slaveN 
+    # Change hostname to slaveN
     # hostname "$NODE_TYPE"
+
+    # delete old mount if exists
+    sudo sed -i '/\/home\/mpiuser\/cloud/d' /etc/fstab
+    sudo mount -t nfs "master""$SUFFIX"":/home/mpiuser/cloud /home/mpiuser/cloud"
+    echo -e "master""$SUFFIX"":/home/mpiuser/cloud /home/mpiuser/cloud nfs" >> "/etc/fstab"
 fi
 
 echo "Well done!"
