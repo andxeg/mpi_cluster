@@ -138,7 +138,7 @@ do
 
     # set ip address to cluster net interface
     ssh-keygen -f "/home/"$USER"/.ssh/known_hosts" -R "$addr"
-    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su -c \" printf '\nauto %s\niface %s inet static\naddress %s\nnetmask 255.255.255.0\n' $CLUSTER_IFACE $CLUSTER_IFACE $cluster_ip >> $CLUSTER_IFACE_CONFIG && ifup $CLUSTER_IFACE && ifconfig $CLUSTER_IFACE mtu 1450\""
+    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su -c \" printf '\nauto %s\niface %s inet static\naddress %s\nnetmask 255.255.255.0\nmtu 1450\n' $CLUSTER_IFACE $CLUSTER_IFACE $cluster_ip >> $CLUSTER_IFACE_CONFIG && ifup $CLUSTER_IFACE && ifconfig $CLUSTER_IFACE mtu 1450\""
 
     # copy to each cluster node configuration script
     sshpass -p "ubuntu" scp $CONFIG_SCRIPT ubuntu@"$addr":/tmp
