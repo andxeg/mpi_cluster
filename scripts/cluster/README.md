@@ -5,6 +5,13 @@
 
 Пример схемы подключения см. в `scheme.jpeg`.
 
+# Prerequisites
+```bash
+sudo apt install cloud-image-utils qemu-kvm
+sudo apt install sshpass
+```
+
+
 # Как пользоваться скриптами?
 Пусть есть два сервера: `server1` и `server2`, и стоит задача сделать кластер из `N` узлов.
 Сервера должны быть доступны друг другу.
