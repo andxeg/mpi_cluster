@@ -2,8 +2,8 @@
 
 
 PROG_DIR="/home/mpiuser/cloud/experiments/NPB3.4/NPB3.4-MPI/bin" # path in master node where are programs
-RESULT_DIR="/home/mpiuser/cloud/experiments/results/sharing_NPB_size_A" # dir in master node for results
-MON_RES_DIR="/home/arccn/mpi/experiments/results/sharing_NPB_size_A/monitor" # dir in host machine for monitoring results
+RESULT_DIR="/home/mpiuser/cloud/experiments/results/sharing_NPB_size_A_local" # dir in master node for results
+MON_RES_DIR="/home/arccn/mpi/experiments/results/sharing_NPB_size_A_local/monitor" # dir in host machine for monitoring results
 
 # MPI programs
 # This MPI programs use only 2**N MPI processes
@@ -12,8 +12,11 @@ P="is ep cg lu ft"
 SIZE="A"
 ##SIZES="A B C"
 
-MASTER_1="192.168.122.207"
-MASTER_2="192.168.122.238"
+EXPERIMENTS_AMOUNT=5
+MIN_MON_WINDOW=5
+
+MASTER_1="192.168.122.131"
+MASTER_2="192.168.122.211"
 CLUSTER_1="master-first slave-first-1 slave-first-2 slave-first-3 slave-first-4 slave-first-5 slave-first-6 slave-first-7 slave-first-8 slave-first-9 slave-first-10 slave-first-11 slave-first-12 slave-first-13 slave-first-14 slave-first-15"
 CLUSTER_2="master-second slave-second-1 slave-second-2 slave-second-3 slave-second-4 slave-second-5 slave-second-6 slave-second-7 slave-second-8 slave-second-9 slave-second-10 slave-second-11 slave-second-12 slave-second-13 slave-second-14 slave-second-15"
 
@@ -52,49 +55,54 @@ read -ra PROGRAM <<< "$P"
 # Run first program in CLUSTER_1, second program in CLUSTER_2
 
 N="${#PROGRAM[@]}"
-for (( i = 0; i < N; i++ ))
+
+for (( k = 0; k < EXPERIMENTS_AMOUNT; k++ ))
 do
-    for (( j = i; j < N; j++ ))
+    for (( i = 0; i < N; i++ ))
     do
-        P1="${PROGRAM[$i]}"".""$SIZE"".x"
-        P2="${PROGRAM[$j]}"".""$SIZE"".x"
-
-        printf "Start group $P1 and $P2\n"
-        for np1 in 4 8 16
+        for (( j = i; j < N; j++ ))
         do
-            for np2 in 4 8 16
+            P1="${PROGRAM[$i]}"".""$SIZE"".x"
+            P2="${PROGRAM[$j]}"".""$SIZE"".x"
+
+            printf "Start group $P1 and $P2\n"
+            for np1 in 4 8 16
             do
-                monitor_first="$(get_nodes_str "$CLUSTER_1" $np1 "\|")"
-                monitor_second="$(get_nodes_str "$CLUSTER_2" $np2 "\|")" ## launch get_monitor_nodes
-                cluster_first="$(get_nodes_str "$CLUSTER_1" $np1 ",")"
-                cluster_second="$(get_nodes_str "$CLUSTER_2" $np2 ",")"
+                for np2 in 4 8 16
+                do
+                    monitor_first="$(get_nodes_str "$CLUSTER_1" $np1 "\|")"
+                    monitor_second="$(get_nodes_str "$CLUSTER_2" $np2 "\|")" ## launch get_monitor_nodes
+                    cluster_first="$(get_nodes_str "$CLUSTER_1" $np1 ",")"
+                    cluster_second="$(get_nodes_str "$CLUSTER_2" $np2 ",")"
 
-                printf "RUN PROCS: ($P1, $P2); NP: ($np1, $np2); NODES: (%s, %s); MONITOR(%s, %s) \n" "$cluster_first" "$cluster_second " "$monitor_first" "$monitor_second"
+                    printf "[Experiment #$k] RUN PROCS: ($P1, $P2); NP: ($np1, $np2); NODES: (%s, %s); MONITOR(%s, %s) \n" "$cluster_first" "$cluster_second " "$monitor_first" "$monitor_second"
 
-                # Start monitoring
-                pidfile "/tmp/kvmtop_1.pid" sudo kvmtop -c qemu:///system --printer=text --cpu --net | pidfile "/tmp/grep_1.pid" grep -w "$monitor_first" &> $MON_RES_DIR/$P1"_"$P2"_"$np1"_"$np2"_"mon_first.out &
-                pidfile "/tmp/kvmtop_2.pid" sudo kvmtop -c qemu:///system --printer=text --cpu --net | pidfile "/tmp/grep_2.pid" grep -w "$monitor_second" &> $MON_RES_DIR/$P2"_"$P1"_"$np2"_"$np1"_"mon_second.out &
+                    # Start monitoring
+                    pidfile "/tmp/kvmtop_1.pid" sudo kvmtop -c qemu:///system --printer=text --cpu --net | pidfile "/tmp/grep_1.pid" grep -w "$monitor_first" &> $MON_RES_DIR/$P1"_"$P2"_"$np1"_"$np2"_"mon_first_e_"$k".out &
+                    pidfile "/tmp/kvmtop_2.pid" sudo kvmtop -c qemu:///system --printer=text --cpu --net | pidfile "/tmp/grep_2.pid" grep -w "$monitor_second" &> $MON_RES_DIR/$P2"_"$P1"_"$np2"_"$np1"_"mon_second_e_"$k".out &
 
-                # Run MPI programs
-                sshpass -p "mpiuser" ssh -o StrictHostKeyChecking=no -tT mpiuser@$MASTER_1 "mpirun -np $np1 --hosts $cluster_first $PROG_DIR/$P1 &> $RESULT_DIR/$P1\_$P2\_$np1\_$np2.out" &
-                pids[0]=$!
-                sshpass -p "mpiuser" ssh -o StrictHostKeyChecking=no -tT mpiuser@$MASTER_2 "mpirun -np $np2 --hosts $cluster_second $PROG_DIR/$P2 &> $RESULT_DIR/$P2\_$P1\_$np2\_$np1.out" &
-                pids[1]=$!
+                    # Run MPI programs
+                    sshpass -p "mpiuser" ssh -o StrictHostKeyChecking=no -tT mpiuser@$MASTER_1 "mpirun -np $np1 --hosts $cluster_first $PROG_DIR/$P1 &> $RESULT_DIR/$P1\_$P2\_$np1\_$np2\_e_$k.out" &
+                    pids[0]=$!
+                    sshpass -p "mpiuser" ssh -o StrictHostKeyChecking=no -tT mpiuser@$MASTER_2 "mpirun -np $np2 --hosts $cluster_second $PROG_DIR/$P2 &> $RESULT_DIR/$P2\_$P1\_$np2\_$np1\_e_$k.out" &
+                    pids[1]=$!
  
-                wait ${pids[0]}
-                sudo kill -9 $(cat "/tmp/kvmtop_1.pid")
-                sudo kill -9 $(cat "/tmp/grep_1.pid")
+                    sleep $MIN_MON_WINDOW
 
-                wait ${pids[1]}
-                sudo kill -9 $(cat "/tmp/kvmtop_2.pid")
-                sudo kill -9 $(cat "/tmp/grep_2.pid")
+                    wait ${pids[0]}
+                    sudo kill -9 $(cat "/tmp/kvmtop_1.pid")
+                    sudo kill -9 $(cat "/tmp/grep_1.pid")
 
+                    wait ${pids[1]}
+                    sudo kill -9 $(cat "/tmp/kvmtop_2.pid")
+                    sudo kill -9 $(cat "/tmp/grep_2.pid")
+
+                done
             done
-        done
-        printf "\n"
+            printf "\n"
 
+        done
     done
 done
-
 
 echo "Well done!!!"
