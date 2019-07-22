@@ -1,4 +1,5 @@
 # Иерархия каталога
+```
 ./
 ├── local
 │   ├── check_connectivity.sh
@@ -15,6 +16,7 @@
 │   └── vxlan_up_test.sh
 └── shared
     └── create_cluster_shared.py
+```
 
 # Common Prerequisites
 On each physical server where you will start virtual machine run:
@@ -134,11 +136,10 @@ net.bridge.bridge-nf-call-arptables = 0
 net.bridge.bridge-nf-filter-pppoe-tagged = 0
 net.bridge.bridge-nf-filter-vlan-tagged = 0
 net.bridge.bridge-nf-pass-vlan-input-dev = 0
-
 ```
+
 - Проверить доступность порта (https://www.tecmint.com/check-remote-port-in-linux/)
 - Может понадобиться ограничить порты для `mpirun` и `mpiexec` (https://wiki.mpich.org/mpich/index.php/Using_the_Hydra_Process_Manager#Environment_Settings)
 - Проверить, что ssh настроен без пароля на узлах кластера
 - Проверить, что в `/etc/hosts` есть все узлы
-
 
