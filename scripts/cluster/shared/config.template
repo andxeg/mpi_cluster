@@ -1,0 +1,32 @@
+{
+    "servers": [
+        {
+            "name": "",
+            "address": "",
+            "user": "",
+            "password": "",
+            "resources": {
+                "CPU": "16",
+                "RAM": "64",
+                "HDD": "50"
+            }
+        },
+        {
+            "name": "",
+            "address": "",
+            "user": "",
+            "password": "",
+            "resources": {
+                "CPU": "20",
+                "RAM": "16",
+                "HDD": "50"
+            }
+        }
+    ],
+    "bridge": {
+        "name": "",
+        "address": "",
+        "user": "",
+        "password": "",
+    }
+}

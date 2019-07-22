@@ -1,29 +1,85 @@
-# Задача
-- Поднять виртуальные машины на одном сервере
-- Трафик между виртуальными машинами должен проходить через программный коммутатор, который располагается на другом сервере
+# Иерархия каталога
+./
+├── local
+│   ├── check_connectivity.sh
+│   ├── clear_local.sh
+│   └── create_cluster_local.sh
+├── README.md
+├── remote
+│   ├── clear.sh
+│   ├── create_cluster.sh
+│   ├── linux_bridge_down.sh
+│   ├── linux_bridge_up.sh
+│   ├── scheme.jpeg
+│   ├── vxlan_down_test.sh
+│   └── vxlan_up_test.sh
+└── shared
+    └── create_cluster_shared.py
 
-
-Пример схемы подключения см. в `scheme.jpeg`.
-
-# Prerequisites
+# Common Prerequisites
+On each physical server where you will start virtual machine run:
 ```bash
 sudo apt install cloud-image-utils qemu-kvm
 sudo apt install sshpass
 ```
 
 
-# Как пользоваться скриптами?
+# Задача 1
+- Поднять виртуальные машины на одном сервере
+- Трафик между виртуальными машинами должен проходить через программный коммутатор, который располагается на том же сервере, что и виртуальные машины
+
+
+# Решение
+Пусть есть один сервер: `server1`, и стоит задача сделать кластер из `N` узлов.
+
+На сервере `server1` нужно запустить скрипт `./local/create_cluster_local.sh` необходимыми аргументами.
+Этот скрипт создаст `N` виртуальных машин, настроит между ними связность по ssh, настроит NFS.
+
+Для удаления кластера нужно запустить скрипт `./local/clear_local.sh`.
+
+
+
+# Задача 2
+- Поднять виртуальные машины на одном сервере
+- Трафик между виртуальными машинами должен проходить через программный коммутатор, который располагается на другом сервере
+
+Пример схемы подключения см. в `./remote/scheme.jpeg`.
+
+# Решение
 Пусть есть два сервера: `server1` и `server2`, и стоит задача сделать кластер из `N` узлов.
 Сервера должны быть доступны друг другу.
 
-На сервере `server2` нужно запустить скрипт `linux_bridge_up.sh` с аргументом `N`. Этот скрипт создаст linux bridge с необходимым для работы кластера количеством vxlan интерфейсов. Для удаления этого linux bridge'а нужно запустить скрипт `linux_bridge_down.sh` с аргументом `N`.
+На сервере `server2` нужно запустить скрипт `./remote/linux_bridge_up.sh` с аргументом `N`. Этот скрипт создаст linux bridge с необходимым для работы кластера количеством vxlan интерфейсов. Для удаления этого linux bridge'а нужно запустить скрипт `./remote/linux_bridge_down.sh` с аргументом `N`.
 
-На серверe `server1` нужно запустить скрипт `create_cluster.sh` с аргументов `N-1` (количество slave узлов). Этот скрипт создаст `N` виртуальных машин, настроит между ними связность по ssh, настроит NFS, создаст linux bridge'и и vxlan интерфейсы таким образом, чтобы трафик проходил через `server2`. Для удаления кластера нужно запустить скрипт `clear.sh`.
+На серверe `server1` нужно запустить скрипт `./remote/create_cluster.sh` с необходимыми аргументами. Этот скрипт создаст `N` виртуальных машин, настроит между ними связность по ssh, настроит NFS, создаст linux bridge'и и vxlan интерфейсы таким образом, чтобы трафик проходил через `server2`.
 
-Важно! IP адреса `server1` и `server2` нужно прописать в скриптах `linux_bridge_up.sh`, `create_cluster.sh`.
+Для удаления кластера нужно запустить скрипт `./remote/clear.sh`.
+
+Важно! IP адреса `server1` и `server2` нужно прописать в скриптах `./remote/linux_bridge_up.sh`, `./remote/create_cluster.sh`.
+
+# Задача 3
+- Поднять виртуальные машины на нескольких серверах
+- Трафик между виртуальными машинами должен проходить через программный коммутатор, который располагается на отдельном сервере
+
+# Prerequisites
+On local machine where you will start script `./shared/create_cluster_shared.py` you should run:
+```bash
+sudo apt install build-essential libssl-dev libffi-dev python3-dev python3-pip
+sudo pip install cryptography fabric2
+
+```
+
+
+# Решение
+Пусть есть несколько серверов: `server1`, ..., `serverM`, и стоит задача сделать MPI кластер.
+Сервера должны быть доступны друг другу.
+
+Сначала нужно сформировать конфигурационный файл, в котором описать все сервера, их параметры (CPU, RAM, HDD, IP address, user, password). Также нужно указать сервер, на котором будет располагаться программный коммутатор, через который будут проходить TCP потоки между узлами кластера. Шаблон конфигурационного файла -> `./shared/config.template`.
 
 
 # Примечания
+
+- Нужно зайти на master ноду кластера и запустить скрипт `./local/check_connectivity.sh`, который проверит доступность slave узлов
 
 - Простой способ проверить, что все работает
 ```
@@ -35,7 +91,6 @@ sudo ifconfig <iface_name> mtu <size, 1450 recommended>
 ```
 - Проверить, не запущен ли firewall на серверах и виртуальных машинах
 - На серверах и виртуальных машинах проверить iptables. В идеале удалить все лишние правила, default policy сделать ACCEPT.
-
 ```
 arccn@mc2e:~$ sudo iptables -t nat -S
 -P PREROUTING ACCEPT
@@ -85,6 +140,5 @@ net.bridge.bridge-nf-pass-vlan-input-dev = 0
 - Может понадобиться ограничить порты для `mpirun` и `mpiexec` (https://wiki.mpich.org/mpich/index.php/Using_the_Hydra_Process_Manager#Environment_Settings)
 - Проверить, что ssh настроен без пароля на узлах кластера
 - Проверить, что в `/etc/hosts` есть все узлы
-
 
 
