@@ -67,8 +67,16 @@ sudo apt install sshpass
 On local machine where you will start script `./shared/create_cluster_shared.py` you should run:
 ```bash
 sudo apt install build-essential libssl-dev libffi-dev python3-dev python3-pip
-sudo pip install cryptography fabric2
+sudo pip install cryptography tqdm==2.2.3 termcolor
 
+```
+
+На каждом сервере нужно создать отдельную директорию, в которой будет располагаться все необходимые для создания и работы кластера данные. Например, директория `/home/$USER/mpi/`. В ней должны быть две директории `./images` и `./cluster`. В директорию `./images` нужно скопировать образы виртуальных машин (https://disk.yandex.ru/client/disk/MC2E/ubuntu_18_04) и конфигурацию в файле config для `cloud-init`:
+```bash
+#cloud-config
+password: ubuntu
+chpasswd: { expire: False }
+ssh_pwauth: True
 ```
 
 

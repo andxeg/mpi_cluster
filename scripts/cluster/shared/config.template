@@ -6,10 +6,12 @@
             "user": "",
             "password": "",
             "resources": {
-                "CPU": "16",
-                "RAM": "64",
-                "HDD": "50"
-            }
+                "cpu": "16",
+                "ram": "64",
+                "hdd": "50"
+            },
+            "path": "",
+            "ext-iface": ""
         },
         {
             "name": "",
@@ -17,10 +19,12 @@
             "user": "",
             "password": "",
             "resources": {
-                "CPU": "20",
-                "RAM": "16",
-                "HDD": "50"
-            }
+                "cpu": "20",
+                "ram": "16",
+                "hdd": "50"
+            },
+            "path": "",
+            "ext-iface": ""
         }
     ],
     "bridge": {
@@ -28,5 +32,7 @@
         "address": "",
         "user": "",
         "password": "",
+        "path": "",
+        "ext-iface": ""
     }
 }
