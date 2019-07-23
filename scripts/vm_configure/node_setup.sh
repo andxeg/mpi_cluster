@@ -48,8 +48,6 @@ do
     fi 
 done
 
-# Change user to mpiuser
-
 # Specific steps according to node type
 if echo "$NODE_TYPE" | grep -qw "master"; then
     printf "Specific steps for master node\n"
@@ -74,10 +72,12 @@ if echo "$NODE_TYPE" | grep -qw "master"; then
         fi 
     done
 else
+    # Specific steps for slave node
     printf "Specific steps for %s node\n" $NODE_TYPE
-    # For slave node
+    
     # Change hostname to slaveN
-    # hostname "$NODE_TYPE"
+    sudo hostname $NODE_TYPE
+    sudo echo $NODE_TYPE > /etc/hostname
 
     # delete old mount if exists
     sudo sed -i '/\/home\/mpiuser\/cloud/d' /etc/fstab
