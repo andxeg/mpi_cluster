@@ -1,15 +1,16 @@
 #!/bin/bash
 
-if [ $# -ne 1 ]; then
+if [ $# -ne 3 ]; then
     printf "error in input parameters\n"
-    printf "type %s <number of vxlan interfaces>\n" "$0"
+    printf "type %s <start vxlan id> <number of vxlan interfaces> <vxlan bridge name>\n" "$0"
+    printf "Example: %s 40 16 br-cluster\n" "$0"
     exit 1
 fi
 
 
-N=$1
-VXLAN_START_ID=40
-VXLAN_BRIDGE="br-cluster"
+VXLAN_START_ID=$1
+VXLAN_NUMBER=$2
+VXLAN_BRIDGE=$3
 
 
 # down bridge and delete it
@@ -18,7 +19,7 @@ sudo ip link set $VXLAN_BRIDGE down
 sudo ip link delete $VXLAN_BRIDGE
 
 # delete vxlan interfaces
-for (( i = 0; i < $N; i++ ))
+for (( i = 0; i < $VXLAN_NUMBER; i++ ))
 do
     vxlan="$((VXLAN_START_ID+i))"
     vxlan_iface="vxlan"$vxlan
