@@ -2,7 +2,7 @@
     "servers": [
         {
             "name": "",
-            "address": "",
+            "host": "",
             "user": "",
             "password": "",
             "resources": {
@@ -15,7 +15,7 @@
         },
         {
             "name": "",
-            "address": "",
+            "host": "",
             "user": "",
             "password": "",
             "resources": {
@@ -29,7 +29,7 @@
     ],
     "bridge": {
         "name": "",
-        "address": "",
+        "host": "",
         "user": "",
         "password": "",
         "path": "",

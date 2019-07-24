@@ -8,27 +8,39 @@
 # TODO
 # move timeout to input parameters
 
-if [ $# -ne 8 ]; then
+if [ $# -ne 12 ]; then
     printf "error in input parameters\n"
-    printf "type %s <number of slaves> <start_vxlan_id> <suffix for node name>
-            <start ip addresses in subnet 10.0.0.0/24> <directory with images>
-            <external interface> <local ip> <remote ip>\n" "$0"
-    printf "Example: %s 16 40 '-first' 1 '/home/arccn/mpi' 'br-ext' 172.30.11.100 192.168.131.36\n" "$0"
+    printf "type %s <with or without master>
+                    <number of slaves>
+                    <start slave number>
+                    <start_vxlan_id>
+                    <suffix for node name>
+                    <start ip addresses in subnet 10.0.0.0/24>
+                    <directory with images>
+                    <external interface>
+                    <local ip>
+                    <remote ip>
+                    <script for vm configure>
+                    <timeout for vms start>\n" "$0"
+    printf "Example #1: %s yes 15 1 40 '-first' 1 '/home/arccn/mpi' 'br-ext' 172.30.11.100 192.168.131.36 'node_setup.sh' 30\n" "$0"
+    printf "Example #2: %s no 16 16 56 '-first' 1 '/home/arccn/mpi' 'br-ext' 192.168.131.124 192.168.131.36 'node_setup.sh' 30\n" "$0"
     exit 1
 fi
 
+MASTER=$1 # --master yes or --master no
+SLAVES_NUM=$2
+SLAVE_START_NUM=$3
+VXLAN_ID_START=$4
+SUFFIX="$5" # for example "-1", "-first", "-second"
+START_CLUSTER_ADDR=$6
+VM_IMAGE_PREFIX="$7"/"xenial-server-cloudimg-amd64-disk1-"
+BASE_CONFIG="$7"/"/config"
 
-SLAVES_NUM=$1
-VXLAN_ID_START=$2
-SUFFIX="$3" # for example "-1", "-first", "-second"
-CONFIG_SCRIPT="node_setup.sh" # script for configuring cluster nodes
-START_CLUSTER_ADDR=$4
-VM_IMAGE_PREFIX="$5"/"xenial-server-cloudimg-amd64-disk1-"
-BASE_CONFIG="$5"/"/config"
-
-DEV=$6 # for example "br-ext"
-LOCAL_IP=$7   # local server with virtual machines
-REMOTE_IP=$8 # remote server with ovs or linux bridge
+DEV=$8 # for example "br-ext"
+LOCAL_IP=$9   # local server with virtual machines
+REMOTE_IP=$10 # remote server with ovs or linux bridge
+CONFIG_SCRIPT=$11 # script for configuring cluster nodes
+TIMEOUT=$12
 
 
 CLUSTER_NET="10.0.0."
@@ -39,8 +51,13 @@ IMAGES_DIR="./images"
 
 
 # GENERATE NODE NAMES
-NODES="master""$SUFFIX"
-for ((i=1; i <= $SLAVES_NUM; i++))
+NODES=""
+
+if [ "$MASTER" == "yes" ] ; then
+    NODES="master""$SUFFIX"
+fi
+
+for ((i=$SLAVE_START_NUM; i <= $SLAVES_NUM; i++))
 do
     NODES+=" slave""$SUFFIX""-"$i
 done
@@ -89,7 +106,6 @@ done
 sudo brctl show
 
 
-TIMEOUT=10
 printf "Wait %d seconds while nodes are assigned IP addresses\n" "$TIMEOUT"
 sleep $TIMEOUT
 
@@ -105,12 +121,6 @@ IP_ADDRESSES=""
 
 for n in $NODES
 do 
-##    if [ "$(echo "$NODES" | grep -w "$n")" == "" ]
-##    then
-##        echo "NOT CLUSTER NODE -> ""$n"
-##        continue
-##    fi
-
     IP_ADDRESSES+=" "$( echo $([[ ! -z $n ]] && sudo virsh domifaddr $n) | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}')
 done
 
@@ -118,7 +128,7 @@ echo "IP ADDRESSES -> "$IP_ADDRESSES
 
 # SSH TO NODES AND START CONFIGURE
 CLUSTER_IP_ADDRESSES="$CLUSTER_NET""$START_CLUSTER_ADDR"
-for (( i = 1; i <= $SLAVES_NUM; i++ ))
+for (( i = $SLAVE_START_NUM; i <= $SLAVES_NUM; i++ ))
 do
     CLUSTER_IP_ADDRESSES+=" ""$CLUSTER_NET""$(($START_CLUSTER_ADDR+i))"
 done
