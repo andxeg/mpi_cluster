@@ -107,9 +107,6 @@ do
 
     ssh-keygen -f "/home/"$USER"/.ssh/known_hosts" -R "$addr"
 
-    # NOTE hostname changing command you should add to $CONFIG_SCRIPT
-    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su -c \"hostname $name && echo $name > /etc/hostname\""
-
     sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su - mpiuser -c \"cd /home/mpiuser/scripts && sudo "./""$CONFIG_SCRIPT" $name $SUFFIX $IP_ADDRESSES_COMMA \""
 
 done

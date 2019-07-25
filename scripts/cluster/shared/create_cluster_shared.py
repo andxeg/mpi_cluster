@@ -60,6 +60,9 @@ class Node(object):
                                                 self._name,
                                                 self._user + '@' + self._host,
                                                 self._password)
+    @property
+    def host(self):
+        return self._host
 
     def log_prefix(self):
         return "[%10s| %20s| %30s]" % (self._type, 
@@ -67,13 +70,14 @@ class Node(object):
                                        self._user + '@' + self._host)
 
 class Server(Node):
-    def __init__(self, name, config, vms_start_script, vm_conf_script, vm_params, master=False):
+    def __init__(self, name, config, vms_start_script, vm_conf_script, cl_conf_script, vm_params, master=False):
         super(Server, self).__init__("SERVER", config)
         self._cluster_name = name
         self._resources    = config["resources"]
 
         self._vms_start_script = vms_start_script
         self._vm_conf_script = vm_conf_script
+        self._cl_conf_script  = cl_conf_script
         self._vm_params = vm_params
 
         # calculate number of virtual machine
@@ -86,18 +90,59 @@ class Server(Node):
     def get_vm_number(self):
         return self._vm_number
 
-    def get_addr(self):
-        return self._host
-
     def set_master_role(self, is_master):
         self._master = is_master
 
-    def start_vms(self, master):
+    def start_vms(self, vm_start, vxlan_start, suffix, ip_start, bridge_addr):
         # if master == True => create local cluster with master else without master
-        pass
+        ## mc2e -> ./start_vms.sh yes 3 1 40 '-first' 1 1024 1 '/home/arccn/images' 'br-ext' 172.30.11.100 192.168.131.36 'node_setup.sh' 30
 
-    def configure_vms(self, master):
-        pass
+        # Transfer vms_start and vm_conf scripts to server
+        self._connection.put(self._vms_start_script,
+                             os.path.join(self._work_dir, "cluster", self._vms_start_script))
+
+        self._connection.put(self._vm_conf_script,
+                             os.path.join(self._work_dir, "cluster", self._vm_conf_script))
+
+        self._connection.run("cd %s && ./%s '%s' %d %d %d '%s' %d %d %d '%s' '%s' '%s' '%s' '%s' %d" %
+                             (os.path.join(self._work_dir, "cluster"),
+                              self._vms_start_script,
+                              "yes" if self._master else "no",
+                              (self._vm_number - 1) if self._master else self._vm_number,
+                              vm_start,
+                              vxlan_start,
+                              suffix,
+                              ip_start,
+                              self._vm_params["ram"],
+                              self._vm_params["cpu"],
+                              os.path.join(self._work_dir, "images"),
+                              self._ext_iface,
+                              self._host,
+                              bridge_addr,
+                              self._vm_conf_script,
+                              30))
+
+        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("VMs were started", "red")))
+
+    def configure_vms(self, vm_start, suffix, cluster_ip_addresses):
+        ## mc2e -> ./configure_vms.sh yes 3 1 '-first' 'node_setup.sh' '10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4'
+        
+        # Transfer cluster configure script to server
+        self._connection.put(self._cl_conf_script,
+                             os.path.join(self._work_dir, "cluster", self._cl_conf_script))
+
+        self._connection.run("cd %s && ./%s '%s' %d %d '%s' '%s' '%s'" % 
+                             (os.path.join(self._work_dir, "cluster"),
+                              self.cl_conf_script,
+                              "yes" if self._master else "no",
+                              (self._vm_number - 1) if self._master else self._vm_number,
+                              vm_start,
+                              suffix,
+                              self._vm_conf_script,
+                              cluster_ip_addresses))
+
+
+        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("VMs were configured", "red")))
 
 class Bridge(Node):
     def __init__(self, config, script):
@@ -110,10 +155,10 @@ class Bridge(Node):
 
         # Transfer bridge script to server
         self._connection.put(self._script,
-                             os.path.join(self._work_dir, self._script))
+                             os.path.join(self._work_dir, "cluster", self._script))
 
         self._connection.run("cd %s && ./%s 0 0 br-cluster '' '' ''" % 
-                            (self._work_dir, self._script))
+                            (os.path.join(self._work_dir, "cluster"), self._script))
 
         LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Bridge were created", "red")))
 
@@ -121,8 +166,8 @@ class Bridge(Node):
     def connect(self, vxlan_start, vxlan_num, ip_addr):
         # ./linux_bridge_up.sh 40 4 br-cluster br-ext 192.168.131.36 172.30.11.100
 
-        self._connection.run("cd %s && ./%s %d %d br-cluster %s '' ''" % 
-                            (self._work_dir, 
+        self._connection.run("cd %s && ./%s %d %d br-cluster %s %s %s" % 
+                            (os.path.join(self._work_dir, "cluster"),
                              self._script,
                              vxlan_start,
                              vxlan_num,
@@ -135,16 +180,15 @@ class Bridge(Node):
 class Cluster:
     def __init__(self, name, config, vms_start_script, cl_conf_script, vm_conf_script, br_script, vm_params):
         self._name = name
-        self._cl_conf_script  = cl_conf_script
 
         self._bridge = Bridge(config["bridge"], br_script)
 
         self._servers = [
-            Server(name, server_config, vms_start_script, vm_conf_script, vm_params)
+            Server(name, server_config, vms_start_script, vm_conf_script, cl_conf_script, vm_params)
             for server_config in config["servers"]
         ]
 
-        if len(self._servers):
+        if not len(self._servers):
             raise Exception("There are not any servers in cluster")
 
         # Set master role to the first server
@@ -185,17 +229,29 @@ class Cluster:
         for server in self._servers:
             bridge.connect(vxlan_start,
                            server.get_vm_number(),
-                           server.get_addr())
+                           server.host())
 
             vxlan_start += server.get_vm_number()
 
         # STEP 2: start virtual machine in each server
+        vm_start    = 1
+        vxlan_start = 40
+        ip_start    = 1
         for server in self._servers:
             server.start_vms()
+            start_vms(vm_start, vxlan_start, '-' + self._name, ip_start, self._bridge.host)
+            vm_start += server.get_vm_number()
+            vxlan_start += server.get_vm_number()
+            ip_start += server.get_vm_number()
 
         # STEP 3: configure virtual machines in whole cluster
+        # Tiny hardcode - cluster's VM has IP addresses from 10.0.0.*/24 subnet
+        total_vm_num = vxlan_start - 40
+        cluster_ip_addresses = ','.join(["10.0.0." + str(i) for i in range(1, total_vm_num)])
+        vm_start = 1
         for server in self._servers:
-            server.configure_vms()
+            server.configure_vms(self, vm_start, '-' + self._name, cluster_ip_addresses)
+            vm_start += server.get_vm_number()
 
 
 """
@@ -268,9 +324,10 @@ if __name__ == "__main__":
 ## bridge -> ./linux_bridge_up.sh 40 4 br-cluster br-ext 192.168.131.36 172.30.11.100
 ## bridge -> ./linux_bridge_up.sh 44 4 br-cluster br-ext 192.168.131.36 192.168.131.124
 
-# CONFIGURE VMS LOCAL
-## mc2e -> ./start_vms.sh yes 3 1 40 '-first' 1 '/home/arccn/images' 'br-ext' 172.30.11.100 192.168.131.36 'node_setup.sh' 30
-## s247 -> ./start_vms.sh no  4 4 44 '-first' 5 '/home/arccn/MC2E/images' 'enp16s0f0' 192.168.131.124 192.168.131.36 'node_setup.sh' 30
+# START VMS LOCAL
+## mc2e -> ./start_vms.sh yes 3 1 40 '-first' 1 1024 1 '/home/arccn/images' 'br-ext' 172.30.11.100 192.168.131.36 'node_setup.sh' 30
+## s247 -> ./start_vms.sh no  4 4 44 '-first' 5 1024 1 '/home/arccn/MC2E/images' 'enp16s0f0' 192.168.131.124 192.168.131.36 'node_setup.sh' 30
 
 # CONFIGURE VMS GLOBAL (SSH WITHOUT PASSWORD, NFS)
-## TODO
+## mc2e -> ./configure_vms.sh yes 3 1 '-first' 'node_setup.sh' '10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4'
+## s247 -> ./configure_vms.sh no  4 4 '-first' 'node_setup.sh' '10.0.0.5,10.0.0.6,10.0.0.7,10.0.0.8'

@@ -1,14 +1,6 @@
 #!/bin/bash
 
-
-# TODO
-# add with or without master flag
-# add start number of slave
-
-# TODO
-# move timeout to input parameters
-
-if [ $# -ne 12 ]; then
+if [ $# -ne 14 ]; then
     printf "error in input parameters\n"
     printf "type %s <with or without master>
                     <number of slaves>
@@ -22,25 +14,28 @@ if [ $# -ne 12 ]; then
                     <remote ip>
                     <script for vm configure>
                     <timeout for vms start>\n" "$0"
-    printf "Example #1: %s yes 15 1 40 '-first' 1 '/home/arccn/mpi' 'br-ext' 172.30.11.100 192.168.131.36 'node_setup.sh' 30\n" "$0"
-    printf "Example #2: %s no 16 16 56 '-first' 1 '/home/arccn/mpi' 'br-ext' 192.168.131.124 192.168.131.36 'node_setup.sh' 30\n" "$0"
+    printf "Example #1: %s yes 15 1 40 '-first' 1 1024 1 '/home/arccn/mpi' 'br-ext' 172.30.11.100 192.168.131.36 'node_setup.sh' 30\n" "$0"
+    printf "Example #2: %s no 16 16 56 '-first' 17 1024 1 '/home/arccn/mpi' 'br-ext' 192.168.131.124 192.168.131.36 'node_setup.sh' 30\n" "$0"
     exit 1
 fi
 
+# ============================== INPUT PARAMETERS =============================
 MASTER=$1 # --master yes or --master no
 SLAVES_NUM=$2
 SLAVE_START_NUM=$3
 VXLAN_ID_START=$4
 SUFFIX="$5" # for example "-1", "-first", "-second"
 START_CLUSTER_ADDR=$6
-VM_IMAGE_PREFIX="$7"/"xenial-server-cloudimg-amd64-disk1-"
-BASE_CONFIG="$7"/"/config"
+VM_RAM=$7
+VM_CPU=$8
+VM_IMAGE_PREFIX="$9"/"xenial-server-cloudimg-amd64-disk1-"
+BASE_CONFIG="$9"/"/config"
 
-DEV=$8 # for example "br-ext"
-LOCAL_IP=$9   # local server with virtual machines
-REMOTE_IP=$10 # remote server with ovs or linux bridge
-CONFIG_SCRIPT=$11 # script for configuring cluster nodes
-TIMEOUT=$12
+DEV=$10 # for example "br-ext"
+LOCAL_IP=$11   # local server with virtual machines
+REMOTE_IP=$12 # remote server with ovs or linux bridge
+CONFIG_SCRIPT=$13 # script for configuring cluster nodes
+TIMEOUT=$14
 
 
 CLUSTER_NET="10.0.0."
@@ -50,14 +45,14 @@ CONFIG_DIR="./config"
 IMAGES_DIR="./images"
 
 
-# GENERATE NODE NAMES
+# ============================= GENERATE NODE NAMES ===========================
 NODES=""
 
 if [ "$MASTER" == "yes" ] ; then
     NODES="master""$SUFFIX"
 fi
 
-for ((i=$SLAVE_START_NUM; i <= $SLAVES_NUM; i++))
+for (( i = $SLAVE_START_NUM; i < ($SLAVE_START_NUM + $SLAVES_NUM); i++ ))
 do
     NODES+=" slave""$SUFFIX""-"$i
 done
@@ -66,7 +61,7 @@ done
 mkdir -p $CONFIG_DIR
 mkdir -p $IMAGES_DIR
 
-# ============ CREATE CONFIG, IMAGE and START NODES =======
+# ====================== CREATE CONFIG, IMAGE and START NODES =================
 id=0
 LANG=en_US
 for node in $NODES
@@ -97,7 +92,7 @@ do
 
     cloud-localds $CONFIG_DIR/"config-""$node"".img" $BASE_CONFIG
     qemu-img create -f qcow2 -b $VM_IMAGE_PREFIX"$image"".qcow2" $IMAGES_DIR/"$node"".img"
-    sudo virt-install --name $node --ram 1024 --vcpus=1 --os-type=linux --os-variant=ubuntu16.04 --virt-type=kvm --hvm --disk $IMAGES_DIR/"$node"".img",device=disk,bus=virtio --disk $CONFIG_DIR/"config-""$node"".img",device=cdrom --network network=default --network bridge="$vxlan_bridge" --graphics none --import --quiet --noautoconsole
+    sudo virt-install --name $node --ram $VM_RAM --vcpus=$VM_CPU --os-type=linux --os-variant=ubuntu16.04 --virt-type=kvm --hvm --disk $IMAGES_DIR/"$node"".img",device=disk,bus=virtio --disk $CONFIG_DIR/"config-""$node"".img",device=cdrom --network network=default --network bridge="$vxlan_bridge" --graphics none --import --quiet --noautoconsole
 
     printf "'%s' was created\n\n" "$node"
 done
@@ -115,7 +110,7 @@ sudo virsh net-dhcp-leases default
 sudo virsh list --all
 
 
-# =================== CONFIGURE NODES =====================
+# =============================== CONFIGURE NODES =============================
 printf "Nodes configuration was started\n"
 IP_ADDRESSES=""
 
@@ -128,7 +123,7 @@ echo "IP ADDRESSES -> "$IP_ADDRESSES
 
 # SSH TO NODES AND START CONFIGURE
 CLUSTER_IP_ADDRESSES="$CLUSTER_NET""$START_CLUSTER_ADDR"
-for (( i = $SLAVE_START_NUM; i <= $SLAVES_NUM; i++ ))
+for (( i = $SLAVE_START_NUM; i < ($SLAVE_START_NUM + $SLAVES_NUM); i++ ))
 do
     CLUSTER_IP_ADDRESSES+=" ""$CLUSTER_NET""$(($START_CLUSTER_ADDR+i))"
 done
