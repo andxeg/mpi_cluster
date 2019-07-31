@@ -10,6 +10,7 @@
                 "ram": "64",
                 "hdd": "50"
             },
+            "vm_num": <number: optional parameter>,
             "path": "",
             "ext-iface": ""
         },
@@ -23,6 +24,7 @@
                 "ram": "16",
                 "hdd": "50"
             },
+            "vm_num": <number: optional parameter>,
             "path": "",
             "ext-iface": ""
         }

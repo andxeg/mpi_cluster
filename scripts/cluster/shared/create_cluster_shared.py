@@ -53,10 +53,10 @@ class Node(object):
                                         'look_for_keys': False,
                                         'password': self._password
                                       },
-                                      connect_timeout=1)
+                                      connect_timeout=5)
 
     def __str__(self):
-        return "[%s] name %20s; %30s : %10s" % (self._type,
+        return "[%s] name %20s; %30s; %10s" % (self._type,
                                                 self._name,
                                                 self._user + '@' + self._host,
                                                 self._password)
@@ -80,15 +80,26 @@ class Server(Node):
         self._cl_conf_script  = cl_conf_script
         self._vm_params = vm_params
 
-        # calculate number of virtual machine
-        # Should I give some resources to linux bridges?
-        self._vm_number = min(int(math.log(float(self._resources["cpu"]) / self._vm_params["cpu"], 2)),
-                              int(math.log(float(self._resources["ram"]) / self._vm_params["ram"], 2)))
+        if "vm_num" not in config:
+            # calculate number of virtual machine
+            # Should I give some resources to linux bridges?
+            self._vm_number = min(int(math.log(float(self._resources["cpu"]) / self._vm_params["cpu"], 2)),
+                                  int(math.log(float(self._resources["ram"]) / self._vm_params["ram"], 2)))
+        else:
+            self._vm_number = int(config["vm_num"])
 
-        self._master = True
+        self._master = False
+
+    def __str__(self):
+        return "%s; %15s; %5d" % (super(Server, self).__str__(),
+                                  "with master" if self._master else "without master",
+                                  self._vm_number)
 
     def get_vm_number(self):
         return self._vm_number
+
+    def get_slaves_number(self):
+        return (self._vm_number - 1) if self._master else self._vm_number
 
     def set_master_role(self, is_master):
         self._master = is_master
@@ -99,16 +110,16 @@ class Server(Node):
 
         # Transfer vms_start and vm_conf scripts to server
         self._connection.put(self._vms_start_script,
-                             os.path.join(self._work_dir, "cluster", self._vms_start_script))
+                             os.path.join(self._work_dir, "cluster", self._vms_start_script.split('/')[-1]))
 
         self._connection.put(self._vm_conf_script,
-                             os.path.join(self._work_dir, "cluster", self._vm_conf_script))
+                             os.path.join(self._work_dir, "cluster", self._vm_conf_script.split('/')[-1]))
 
-        self._connection.run("cd %s && ./%s '%s' %d %d %d '%s' %d %d %d '%s' '%s' '%s' '%s' '%s' %d" %
+        self._connection.run("cd %s && bash ./%s '%s' %d %d %d '%s' %d %d %d '%s' '%s' '%s' '%s' '%s' %d" %
                              (os.path.join(self._work_dir, "cluster"),
-                              self._vms_start_script,
+                              self._vms_start_script.split('/')[-1],
                               "yes" if self._master else "no",
-                              (self._vm_number - 1) if self._master else self._vm_number,
+                              self.get_slaves_number(),
                               vm_start,
                               vxlan_start,
                               suffix,
@@ -119,7 +130,7 @@ class Server(Node):
                               self._ext_iface,
                               self._host,
                               bridge_addr,
-                              self._vm_conf_script,
+                              self._vm_conf_script.split('/')[-1],
                               30))
 
         LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("VMs were started", "red")))
@@ -129,16 +140,16 @@ class Server(Node):
         
         # Transfer cluster configure script to server
         self._connection.put(self._cl_conf_script,
-                             os.path.join(self._work_dir, "cluster", self._cl_conf_script))
+                             os.path.join(self._work_dir, "cluster", self._cl_conf_script.split('/')[-1]))
 
-        self._connection.run("cd %s && ./%s '%s' %d %d '%s' '%s' '%s'" % 
+        self._connection.run("cd %s && bash ./%s '%s' %d %d '%s' '%s' '%s'" % 
                              (os.path.join(self._work_dir, "cluster"),
-                              self.cl_conf_script,
+                              self._cl_conf_script.split('/')[-1],
                               "yes" if self._master else "no",
-                              (self._vm_number - 1) if self._master else self._vm_number,
+                              self.get_slaves_number(),
                               vm_start,
                               suffix,
-                              self._vm_conf_script,
+                              self._vm_conf_script.split('/')[-1],
                               cluster_ip_addresses))
 
 
@@ -155,10 +166,10 @@ class Bridge(Node):
 
         # Transfer bridge script to server
         self._connection.put(self._script,
-                             os.path.join(self._work_dir, "cluster", self._script))
+                             os.path.join(self._work_dir, self._script.split('/')[-1]))
 
-        self._connection.run("cd %s && ./%s 0 0 br-cluster '' '' ''" % 
-                            (os.path.join(self._work_dir, "cluster"), self._script))
+        self._connection.run("cd %s && bash ./%s 0 0 br-cluster '' '' ''" % 
+                            (self._work_dir, self._script.split('/')[-1]))
 
         LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Bridge were created", "red")))
 
@@ -166,9 +177,9 @@ class Bridge(Node):
     def connect(self, vxlan_start, vxlan_num, ip_addr):
         # ./linux_bridge_up.sh 40 4 br-cluster br-ext 192.168.131.36 172.30.11.100
 
-        self._connection.run("cd %s && ./%s %d %d br-cluster %s %s %s" % 
-                            (os.path.join(self._work_dir, "cluster"),
-                             self._script,
+        self._connection.run("cd %s && bash ./%s %d %d br-cluster %s %s %s" % 
+                            (self._work_dir,
+                             self._script.split('/')[-1],
                              vxlan_start,
                              vxlan_num,
                              self._ext_iface,
@@ -215,8 +226,9 @@ class Cluster:
                 - create bridges for each virtual machines
                 - set up addr to each vm in cluster
                 - copy node_setup.sh to each vm in cluster
-                - 
-            - 
+            - configure all vms in cluster
+                - configure ssh without password from master to each slaves
+                - configure NFS
         """
 
         LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Cluster creation was started", "red")))
@@ -227,9 +239,9 @@ class Cluster:
         # STEP 1: create bridge with necessary interfaces
         vxlan_start = 40
         for server in self._servers:
-            bridge.connect(vxlan_start,
-                           server.get_vm_number(),
-                           server.host())
+            self._bridge.connect(vxlan_start,
+                                 server.get_vm_number(),
+                                 server.host)
 
             vxlan_start += server.get_vm_number()
 
@@ -238,9 +250,8 @@ class Cluster:
         vxlan_start = 40
         ip_start    = 1
         for server in self._servers:
-            server.start_vms()
-            start_vms(vm_start, vxlan_start, '-' + self._name, ip_start, self._bridge.host)
-            vm_start += server.get_vm_number()
+            server.start_vms(vm_start, vxlan_start, '-' + self._name, ip_start, self._bridge.host)
+            vm_start += server.get_slaves_number()
             vxlan_start += server.get_vm_number()
             ip_start += server.get_vm_number()
 
@@ -250,8 +261,8 @@ class Cluster:
         cluster_ip_addresses = ','.join(["10.0.0." + str(i) for i in range(1, total_vm_num)])
         vm_start = 1
         for server in self._servers:
-            server.configure_vms(self, vm_start, '-' + self._name, cluster_ip_addresses)
-            vm_start += server.get_vm_number()
+            server.configure_vms(vm_start, '-' + self._name, cluster_ip_addresses)
+            vm_start += server.get_slaves_number()
 
 
 """
@@ -279,8 +290,8 @@ if __name__ == "__main__":
                             " -ram 1024" % sys.argv[0],
         formatter_class=RawTextHelpFormatter)
 
-    ap.add_argument('-na', '--name', required=True, type=str, help="[STRING] cluster name")
-    ap.add_argument('-co', '--config', required=True, type=str, help="[PATH] config file with servers description, see config.template")
+    ap.add_argument('-na',  '--name', required=True, type=str, help="[STRING] cluster name")
+    ap.add_argument('-co',  '--config', required=True, type=str, help="[PATH] config file with servers description, see config.template")
     ap.add_argument('-vss', '--vms_start_script', required=True, type=str, help="[PATH] script for VMs creation in single server")
     ap.add_argument('-ccs', '--cluster_conf_script', required=True, type=str, help="[PATH] script for configure VMs in whole cluster")
     ap.add_argument('-vcs', '--vm_conf_script', required=True, type=str, help="[PATH] script for configure one VM in cluster")
@@ -311,23 +322,36 @@ if __name__ == "__main__":
                           {"cpu": vm_cpu, "ram": vm_ram})
         LOG.debug(cluster)
 
-        # cluster.create()
+        cluster.create()
     except Exception as e:
-        LOG.error("Cannot create cluster: %s" str(e))
+        LOG.error("Cannot create cluster: %s" % e)
 
     LOG.debug("Well done!!!")
 
 
 
-# Manual configuration
+## Manual cluster creation
+## COPY to server scripts:
+## '../../vm_configure/node_setup.sh'
+## './start_vms.sh'
+## './configure_vms.sh'
 # BRIDGE
-## bridge -> ./linux_bridge_up.sh 40 4 br-cluster br-ext 192.168.131.36 172.30.11.100
-## bridge -> ./linux_bridge_up.sh 44 4 br-cluster br-ext 192.168.131.36 192.168.131.124
+## bridge -> ./linux_bridge_up.sh  0 0 br-cluster '' '' ''
+## bridge -> ./linux_bridge_up.sh 40 4 br-cluster eth0 192.168.131.36 172.30.11.100
+## bridge -> ./linux_bridge_up.sh 44 4 br-cluster eth0 192.168.131.36 192.168.131.124
 
 # START VMS LOCAL
-## mc2e -> ./start_vms.sh yes 3 1 40 '-first' 1 1024 1 '/home/arccn/images' 'br-ext' 172.30.11.100 192.168.131.36 'node_setup.sh' 30
+## mc2e -> ./start_vms.sh yes 3 1 40 '-first' 1 1024 1 '/home/arccn/mpi/images'  'enp9s0f0'  172.30.11.100 192.168.131.36 'node_setup.sh' 30
 ## s247 -> ./start_vms.sh no  4 4 44 '-first' 5 1024 1 '/home/arccn/MC2E/images' 'enp16s0f0' 192.168.131.124 192.168.131.36 'node_setup.sh' 30
 
 # CONFIGURE VMS GLOBAL (SSH WITHOUT PASSWORD, NFS)
-## mc2e -> ./configure_vms.sh yes 3 1 '-first' 'node_setup.sh' '10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4'
-## s247 -> ./configure_vms.sh no  4 4 '-first' 'node_setup.sh' '10.0.0.5,10.0.0.6,10.0.0.7,10.0.0.8'
+## mc2e -> ./configure_vms.sh yes 3 1 '-first' 'node_setup.sh' '10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4,10.0.0.5,10.0.0.6,10.0.0.7,10.0.0.8'
+## s247 -> ./configure_vms.sh no  4 4 '-first' 'node_setup.sh' '10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4,10.0.0.5,10.0.0.6,10.0.0.7,10.0.0.8'
+
+## Delete cluster
+# bridge -> ./linux_bridge_down.sh 40 8 br-cluster
+# mc2e   -> sudo ./clear.sh yes 3 1 40 '-first'
+# s247   -> sudo ./clear.sh no  4 4 44 '-first'
+
+## Test script
+# python create_cluster_shared.py -n 'first' -co test_config.json -vss ./start_vms.sh -ccs ./configure_vms.sh -vcs ../../vm_configure/node_setup.sh -bcs ../remote/linux_bridge_up.sh -cpu 1 -ram 1024

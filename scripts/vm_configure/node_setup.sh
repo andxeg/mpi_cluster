@@ -48,6 +48,10 @@ do
     fi 
 done
 
+# Change hostname for virtual machine
+sudo hostname $NODE_TYPE
+sudo echo $NODE_TYPE > /etc/hostname
+
 # Specific steps according to node type
 if echo "$NODE_TYPE" | grep -qw "master"; then
     printf "Specific steps for master node\n"
@@ -63,27 +67,22 @@ if echo "$NODE_TYPE" | grep -qw "master"; then
     do
         if [ "$i" -eq 0 ]; then
             echo "sudo -u "$USER" sshpass -p"$PASSWD" ssh-copy-id -i /home/"$USER"/.ssh/id_rsa.pub -oStrictHostKeyChecking=no master""$SUFFIX"
-            # sudo -u "$USER" ssh-copy-id master
             sudo -u "$USER" sshpass -p"$PASSWD" ssh-copy-id -i /home/"$USER"/.ssh/id_rsa.pub -oStrictHostKeyChecking=no master"$SUFFIX"
         else
             echo "sshpass -p"$PASSWD" ssh-copy-id -i /home/"$USER"/.ssh/id_rsa.pub -oStrictHostKeyChecking=no "slave""$SUFFIX""-""$i""
-            #sudo -u "$USER" ssh-copy-id "slave""$i" 
             sudo -u "$USER" sshpass -p"$PASSWD" ssh-copy-id -i /home/"$USER"/.ssh/id_rsa.pub -oStrictHostKeyChecking=no "slave""$SUFFIX""-""$i"
         fi 
     done
 else
     # Specific steps for slave node
     printf "Specific steps for %s node\n" $NODE_TYPE
-    
-    # Change hostname to slaveN
-    sudo hostname $NODE_TYPE
-    sudo echo $NODE_TYPE > /etc/hostname
 
     # delete old mount if exists
     sudo sed -i '/\/home\/mpiuser\/cloud/d' /etc/fstab
-    sudo mount -t nfs "master""$SUFFIX"":/home/mpiuser/cloud /home/mpiuser/cloud"
+    sudo umount -f -l '/home/mpiuser/cloud'
+
+    sudo mount -t nfs master"$SUFFIX":/home/mpiuser/cloud /home/mpiuser/cloud
     echo -e "master""$SUFFIX"":/home/mpiuser/cloud /home/mpiuser/cloud nfs" >> "/etc/fstab"
 fi
 
 echo "Well done!"
-

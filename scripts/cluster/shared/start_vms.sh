@@ -31,11 +31,11 @@ VM_CPU=$8
 VM_IMAGE_PREFIX="$9"/"xenial-server-cloudimg-amd64-disk1-"
 BASE_CONFIG="$9"/"/config"
 
-DEV=$10 # for example "br-ext"
-LOCAL_IP=$11   # local server with virtual machines
-REMOTE_IP=$12 # remote server with ovs or linux bridge
-CONFIG_SCRIPT=$13 # script for configuring cluster nodes
-TIMEOUT=$14
+DEV=${10} # for example "br-ext"
+LOCAL_IP=${11}   # local server with virtual machines
+REMOTE_IP=${12} # remote server with ovs or linux bridge
+CONFIG_SCRIPT=${13} # script for configuring cluster nodes
+TIMEOUT=${14}
 
 
 CLUSTER_NET="10.0.0."
@@ -121,20 +121,21 @@ done
 
 echo "IP ADDRESSES -> "$IP_ADDRESSES
 
+IFS=" "
+read -ra HOSTS <<< "$IP_ADDRESSES"
+read -ra NODES_ARRAY <<< "$NODES"
+
 # SSH TO NODES AND START CONFIGURE
-CLUSTER_IP_ADDRESSES="$CLUSTER_NET""$START_CLUSTER_ADDR"
-for (( i = $SLAVE_START_NUM; i < ($SLAVE_START_NUM + $SLAVES_NUM); i++ ))
+CLUSTER_IP_ADDRESSES=""
+for (( i = $START_CLUSTER_ADDR; i < ($START_CLUSTER_ADDR + ${#NODES_ARRAY[@]}); i++ ))
 do
-    CLUSTER_IP_ADDRESSES+=" ""$CLUSTER_NET""$(($START_CLUSTER_ADDR+i))"
+    CLUSTER_IP_ADDRESSES+=" ""$CLUSTER_NET""$i"
 done
 
 echo "CLUSTER_IP_ADDRESSES -> ""$CLUSTER_IP_ADDRESSES"
 
 IFS=" "
-read -ra HOSTS <<< "$IP_ADDRESSES"
-read -ra NODES_ARRAY <<< "$NODES"
 read -ra CLUSTER_HOSTS <<< "$CLUSTER_IP_ADDRESSES"
-
 CLUSTER_IP_ADDRESSES_COMMA="${CLUSTER_HOSTS[0]}"
 for (( i = 1; i < "${#CLUSTER_HOSTS[@]}"; i++ ))
 do

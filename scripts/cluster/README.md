@@ -146,6 +146,9 @@ net.bridge.bridge-nf-filter-vlan-tagged = 0
 net.bridge.bridge-nf-pass-vlan-input-dev = 0
 ```
 
+- затем обновить конфигурацию `# sysctl -p`
+- modprobe br_netfilter (эту команду нужно выполнить, если обновить конфигурацию не удалось)
+
 - Проверить доступность порта (https://www.tecmint.com/check-remote-port-in-linux/)
 - Может понадобиться ограничить порты для `mpirun` и `mpiexec` (https://wiki.mpich.org/mpich/index.php/Using_the_Hydra_Process_Manager#Environment_Settings)
 - Проверить, что ssh настроен без пароля на узлах кластера
