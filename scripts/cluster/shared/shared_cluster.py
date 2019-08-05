@@ -70,15 +70,16 @@ class Node(object):
                                        self._user + '@' + self._host)
 
 class Server(Node):
-    def __init__(self, name, config, vms_start_script, vm_conf_script, cl_conf_script, vm_params, master=False):
+    def __init__(self, name, config, vms_start_script, vm_conf_script, cl_conf_script, cl_del_script, vm_params, master=False):
         super(Server, self).__init__("SERVER", config)
         self._cluster_name = name
         self._resources    = config["resources"]
 
         self._vms_start_script = vms_start_script
-        self._vm_conf_script = vm_conf_script
-        self._cl_conf_script  = cl_conf_script
-        self._vm_params = vm_params
+        self._vm_conf_script   = vm_conf_script
+        self._cl_conf_script   = cl_conf_script
+        self._cl_del_script    = cl_del_script
+        self._vm_params        = vm_params
 
         if "vm_num" not in config:
             # calculate number of virtual machine
@@ -155,23 +156,53 @@ class Server(Node):
 
         LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("VMs were configured", "red")))
 
+    def delete(self, vm_start, vxlan_start, suffix):
+        # sudo ./clear.sh yes 3 1 40 '-first'
+        
+        # Transfer script for cluster removing to server
+        self._connection.put(self._cl_del_script,
+                             os.path.join(self._work_dir, "cluster", self._cl_del_script.split('/')[-1]))
+
+        self._connection.run("cd %s && bash ./%s '%s' %d %d %d '%s' %d %d %d '%s' '%s' '%s' '%s' '%s' %d" %
+                             (os.path.join(self._work_dir, "cluster"),
+                              self._cl_del_script.split('/')[-1],
+                              "yes" if self._master else "no",
+                              self.get_slaves_number(),
+                              vm_start,
+                              vxlan_start,
+                              suffix))
+
+        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("VMs were deleted", "red")))
+
 class Bridge(Node):
-    def __init__(self, config, script):
+    def __init__(self, config, create_script, delete_script):
         super(Bridge, self).__init__("BRIDGE", config)
-        self._script = script
+        self._create_script = create_script
+        self._delete_script = delete_script
 
     def create(self):
         # bridge up   -> ./linux_bridge_up.sh  0 0 br-cluster '' '' ''
-        # bridge down -> ./linux_bridge_down.sh 0 0 br-cluster
 
         # Transfer bridge script to server
-        self._connection.put(self._script,
-                             os.path.join(self._work_dir, self._script.split('/')[-1]))
+        self._connection.put(self._create_script,
+                             os.path.join(self._work_dir, self._create_script.split('/')[-1]))
 
         self._connection.run("cd %s && bash ./%s 0 0 br-cluster '' '' ''" % 
-                            (self._work_dir, self._script.split('/')[-1]))
+                            (self._work_dir, self._create_script.split('/')[-1]))
 
         LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Bridge were created", "red")))
+
+    def delete(self, vxlan_start, amount):
+        # bridge down -> ./linux_bridge_down.sh <vxlan_start> <amount> br-cluster
+
+        # Transfer bridge script to server
+        self._connection.put(self._delete_script,
+                             os.path.join(self._work_dir, self._delete_script.split('/')[-1]))
+
+        self._connection.run("cd %s && bash ./%s %d %d br-cluster '' '' ''" % 
+                            (self._work_dir, self._delete_script.split('/')[-1], vxlan_start, amount))
+
+        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Bridge and vxlan interfaces were deleted", "red")))
 
 
     def connect(self, vxlan_start, vxlan_num, ip_addr):
@@ -179,7 +210,7 @@ class Bridge(Node):
 
         self._connection.run("cd %s && bash ./%s %d %d br-cluster %s %s %s" % 
                             (self._work_dir,
-                             self._script.split('/')[-1],
+                             self._create_script.split('/')[-1],
                              vxlan_start,
                              vxlan_num,
                              self._ext_iface,
@@ -189,13 +220,18 @@ class Bridge(Node):
         LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("%s was connected to bridge" % ip_addr, "red")))
 
 class Cluster:
-    def __init__(self, name, config, vms_start_script, cl_conf_script, vm_conf_script, br_script, vm_params):
+    def __init__(self, name, config, vms_start_script=None, cl_conf_script=None, vm_conf_script=None, br_script=None,
+                 cl_del_script=None, br_del_script=None, vm_params=None):
+        
+        self._ip_start    = 1
+        self._vxlan_start = 40
+
         self._name = name
 
-        self._bridge = Bridge(config["bridge"], br_script)
+        self._bridge = Bridge(config["bridge"], br_script, br_del_script)
 
         self._servers = [
-            Server(name, server_config, vms_start_script, vm_conf_script, cl_conf_script, vm_params)
+            Server(name, server_config, vms_start_script, vm_conf_script, cl_conf_script, cl_del_script, vm_params)
             for server_config in config["servers"]
         ]
 
@@ -237,7 +273,7 @@ class Cluster:
 
         # The following steps should be done sequentially
         # STEP 1: create bridge with necessary interfaces
-        vxlan_start = 40
+        vxlan_start = self._vxlan_start
         for server in self._servers:
             self._bridge.connect(vxlan_start,
                                  server.get_vm_number(),
@@ -247,8 +283,8 @@ class Cluster:
 
         # STEP 2: start virtual machine in each server
         vm_start    = 1
-        vxlan_start = 40
-        ip_start    = 1
+        vxlan_start = self._vxlan_start
+        ip_start    = self._ip_start
         for server in self._servers:
             server.start_vms(vm_start, vxlan_start, '-' + self._name, ip_start, self._bridge.host)
             vm_start += server.get_slaves_number()
@@ -257,12 +293,86 @@ class Cluster:
 
         # STEP 3: configure virtual machines in whole cluster
         # Tiny hardcode - cluster's VM has IP addresses from 10.0.0.*/24 subnet
-        total_vm_num = vxlan_start - 40
-        cluster_ip_addresses = ','.join(["10.0.0." + str(i) for i in range(1, total_vm_num)])
+        total_vm_num = vxlan_start - self._vxlan_start
+        cluster_ip_addresses = ','.join(["10.0.0." + str(i) for i in range(1, total_vm_num+1)])
         vm_start = 1
         for server in self._servers:
             server.configure_vms(vm_start, '-' + self._name, cluster_ip_addresses)
             vm_start += server.get_slaves_number()
+
+        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Cluster was created", "red")))
+
+    def delete(self):
+        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Cluster removing was started", "red")))
+
+        # STEP 1: Delete all virtual machines on each server
+        vm_start    = 1
+        vxlan_start = self._vxlan_start
+        ip_start    = self._ip_start
+        for server in self._servers:
+            server.delete(vm_start, vxlan_start, '-' + self._name)
+            vm_start += server.get_slaves_number()
+            vxlan_start += server.get_vm_number()
+
+        # STEP 2: Delete vxlan interfaces and bridge
+        total_vm_num = vxlan_start - self._vxlan_start
+        self._bridge.delete(self._vxlan_start, total_vm_num+1)
+
+        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Cluster was deleted", "red")))
+        
+
+def create_cluster(args):
+    name             = args["name"]
+    filename         = args["config"]
+    vms_start_script = args["vms_start_script"]
+    cl_conf_script   = args["cluster_conf_script"]
+    vm_conf_script   = args["vm_conf_script"]
+    br_script        = args["bridge_conf_script"]
+    vm_cpu           = args["vm_cpu"]
+    vm_ram           = args["vm_ram"]
+
+    # LOG.debug("config: %s, cpu per VM: %d, ram per VM: %d" % (config_filename, vm_cpu, vm_ram))
+
+    with open(filename, "r") as f:
+        config = json.load(f)
+    LOG.debug(json.dumps(config, sort_keys=True, indent=4))
+
+    try:
+        cluster = Cluster(name,
+                          config,
+                          vms_start_script=vms_start_script,
+                          cl_conf_script=cl_conf_script,
+                          vm_conf_script=vm_conf_script,
+                          br_script=br_script,
+                          vm_params={"cpu": vm_cpu, "ram": vm_ram})
+
+        LOG.debug(cluster)
+
+        cluster.create()
+    except Exception as e:
+        LOG.error("Cannot create cluster: %s" % e)
+
+def delete_cluster(args):
+    name             = args["name"]
+    filename         = args["config"]
+    cl_del_script    = args["cluster_delete_script"]
+    br_del_script    = args["bridge_delete_script"]
+
+    with open(filename, "r") as f:
+        config = json.load(f)
+    LOG.debug(json.dumps(config, sort_keys=True, indent=4))
+
+    try:
+        cluster = Cluster(name,
+                          config,
+                          cl_del_script=cl_del_script,
+                          br_del_script=br_del_script)
+
+        LOG.debug(cluster)
+
+        cluster.delete()
+    except Exception as e:
+        LOG.error("Cannot delete cluster: %s" % e)
 
 
 """
@@ -279,74 +389,81 @@ class Cluster:
     Bridge script is used for configure remote bridge, through which traffic between VMs will be passed.
 """
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Create MPI cluster with several servers.\n"
-        "Example: python %s -n 'first'"
-                            " -co config.json"
+
+    argv = sys.argv[1:]
+
+    examples = [
+                "Example: python %s create"
+                            " -na  first"
+                            " -co  test_config.json"
                             " -vss start_vms.sh"
                             " -ccs configure_vms.sh"
-                            " -vcs node_setup.sh"
-                            " -bcs linux_bridge_up.sh"
+                            " -vcs ../../vm_configure/node_setup.sh"
+                            " -bcs ../remote/linux_bridge_up.sh"
                             " -cpu 1"
                             " -ram 1024" % sys.argv[0],
-        formatter_class=RawTextHelpFormatter)
+                "Example: python %s delete"
+                            " -na  first"
+                            " -co  test_config.json"
+                            " -cds ../remote/clear.sh"
+                            " -bds ../remote/linux_bridge_down.sh" % sys.argv[0]
+    ]
 
-    ap.add_argument('-na',  '--name', required=True, type=str, help="[STRING] cluster name")
-    ap.add_argument('-co',  '--config', required=True, type=str, help="[PATH] config file with servers description, see config.template")
-    ap.add_argument('-vss', '--vms_start_script', required=True, type=str, help="[PATH] script for VMs creation in single server")
-    ap.add_argument('-ccs', '--cluster_conf_script', required=True, type=str, help="[PATH] script for configure VMs in whole cluster")
-    ap.add_argument('-vcs', '--vm_conf_script', required=True, type=str, help="[PATH] script for configure one VM in cluster")
-    ap.add_argument('-bcs', '--bridge_conf_script', required=True, type=str, help="[PATH] script for bridge configure")
-    ap.add_argument('-cpu', '--vm_cpu', required=True, type=int, help="[INT] cpu per virtual machine")
-    ap.add_argument('-ram', '--vm_ram', required=True, type=int, help="[INT] ram per virtual machine")
-    args = vars(ap.parse_args())
+    ap = argparse.ArgumentParser(description="Create MPI cluster with several servers.\n" + '\n'.join(examples),
+                                 formatter_class=RawTextHelpFormatter)
+    
+    subparsers = ap.add_subparsers(title="commands", dest="command", help='sub-commands')
 
-    name             = args["name"]
-    filename         = args["config"]
-    vms_start_script = args["vms_start_script"]
-    cl_conf_script   = args["cluster_conf_script"]
-    vm_conf_script   = args["vm_conf_script"]
-    br_script        = args["bridge_conf_script"]
-    vm_cpu           = args["vm_cpu"]
-    vm_ram           = args["vm_ram"]
+    ## CREATE ARGUMENTS
+    parser_create = subparsers.add_parser('create', help='create MPI cluster')
 
-    # LOG.debug("config: %s, cpu per VM: %d, ram per VM: %d" % (config_filename, vm_cpu, vm_ram))
+    parser_create.add_argument('-na',  '--name', required=True, type=str, help="[STRING] cluster name")
+    parser_create.add_argument('-co',  '--config', required=True, type=str, help="[PATH] config file with servers description, see config.template")
+    parser_create.add_argument('-vss', '--vms_start_script', required=True, type=str, help="[PATH] script for VMs creation in single server")
+    parser_create.add_argument('-ccs', '--cluster_conf_script', required=True, type=str, help="[PATH] script for configure VMs in whole cluster")
+    parser_create.add_argument('-vcs', '--vm_conf_script', required=True, type=str, help="[PATH] script for configure one VM in cluster")
+    parser_create.add_argument('-bcs', '--bridge_conf_script', required=True, type=str, help="[PATH] script for bridge configure")
+    parser_create.add_argument('-cpu', '--vm_cpu', required=True, type=int, help="[INT] cpu per virtual machine")
+    parser_create.add_argument('-ram', '--vm_ram', required=True, type=int, help="[INT] ram per virtual machine")
 
-    with open(filename, "r") as f:
-        config = json.load(f)
-    LOG.debug(json.dumps(config, sort_keys=True, indent=4))
+    ## DELETE ARGUMENTS
+    parser_delete = subparsers.add_parser('delete', help='delete MPI cluster')
 
+    parser_delete.add_argument('-na',  '--name', required=True, type=str, help="[STRING] cluster name")
+    parser_delete.add_argument('-co',  '--config', required=True, type=str, help="[PATH] config file with servers description, see config.template")
+    parser_delete.add_argument('-cds', '--cluster_delete_script', required=True, type=str, help="[PATH] script to delete cluster`")
+    parser_delete.add_argument('-bds', '--bridge_delete_script', required=True, type=str, help="[PATH] script to delete bridge")
 
-    try:
-        cluster = Cluster(name, config,
-                          vms_start_script, cl_conf_script, vm_conf_script, br_script,
-                          {"cpu": vm_cpu, "ram": vm_ram})
-        LOG.debug(cluster)
+    ## PARSE ARGUMENTS
+    args = vars(ap.parse_args(argv))
+    LOG.debug(args)
 
-        cluster.create()
-    except Exception as e:
-        LOG.error("Cannot create cluster: %s" % e)
+    if args["command"] == 'create':
+        create_cluster(args)
+    elif args["command"] == 'delete':
+        delete_cluster(args)
 
     LOG.debug("Well done!!!")
 
 
-
-## Manual cluster creation
+# Manual cluster creation
 ## COPY to server scripts:
 ## '../../vm_configure/node_setup.sh'
 ## './start_vms.sh'
 ## './configure_vms.sh'
-# BRIDGE
-## bridge -> ./linux_bridge_up.sh  0 0 br-cluster '' '' ''
-## bridge -> ./linux_bridge_up.sh 40 4 br-cluster eth0 192.168.131.36 172.30.11.100
-## bridge -> ./linux_bridge_up.sh 44 4 br-cluster eth0 192.168.131.36 192.168.131.124
 
-# START VMS LOCAL
-## mc2e -> ./start_vms.sh yes 3 1 40 '-first' 1 1024 1 '/home/arccn/mpi/images'  'enp9s0f0'  172.30.11.100 192.168.131.36 'node_setup.sh' 30
-## s247 -> ./start_vms.sh no  4 4 44 '-first' 5 1024 1 '/home/arccn/MC2E/images' 'enp16s0f0' 192.168.131.124 192.168.131.36 'node_setup.sh' 30
+## BRIDGE
+# bridge -> ./linux_bridge_up.sh  0 0 br-cluster '' '' ''
+# bridge -> ./linux_bridge_up.sh 40 4 br-cluster eth0 192.168.131.36 172.30.11.100
+# bridge -> ./linux_bridge_up.sh 44 4 br-cluster eth0 192.168.131.36 192.168.131.124
 
-# CONFIGURE VMS GLOBAL (SSH WITHOUT PASSWORD, NFS)
-## mc2e -> ./configure_vms.sh yes 3 1 '-first' 'node_setup.sh' '10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4,10.0.0.5,10.0.0.6,10.0.0.7,10.0.0.8'
-## s247 -> ./configure_vms.sh no  4 4 '-first' 'node_setup.sh' '10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4,10.0.0.5,10.0.0.6,10.0.0.7,10.0.0.8'
+## START VMS LOCAL
+# mc2e -> ./start_vms.sh yes 3 1 40 '-first' 1 1024 1 '/home/arccn/mpi/images'  'enp9s0f0'  172.30.11.100 192.168.131.36 'node_setup.sh' 30
+# s247 -> ./start_vms.sh no  4 4 44 '-first' 5 1024 1 '/home/arccn/MC2E/images' 'enp16s0f0' 192.168.131.124 192.168.131.36 'node_setup.sh' 30
+
+## CONFIGURE VMS GLOBAL (SSH WITHOUT PASSWORD, NFS)
+# mc2e -> ./configure_vms.sh yes 3 1 '-first' 'node_setup.sh' '10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4,10.0.0.5,10.0.0.6,10.0.0.7,10.0.0.8'
+# s247 -> ./configure_vms.sh no  4 4 '-first' 'node_setup.sh' '10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4,10.0.0.5,10.0.0.6,10.0.0.7,10.0.0.8'
 
 ## Delete cluster
 # bridge -> ./linux_bridge_down.sh 40 8 br-cluster
@@ -354,4 +471,5 @@ if __name__ == "__main__":
 # s247   -> sudo ./clear.sh no  4 4 44 '-first'
 
 ## Test script
-# python create_cluster_shared.py -n 'first' -co test_config.json -vss ./start_vms.sh -ccs ./configure_vms.sh -vcs ../../vm_configure/node_setup.sh -bcs ../remote/linux_bridge_up.sh -cpu 1 -ram 1024
+# python shared_cluster.py create -na  first -co  test_config.json -vss start_vms.sh -ccs configure_vms.sh -vcs ../../vm_configure/node_setup.sh -bcs ../remote/linux_bridge_up.sh -cpu 1 -ram 1024
+# python shared_cluster.py delete -na  first -co  test_config.json -cds ../remote/clear.sh -bds ../remote/linux_bridge_down.sh
