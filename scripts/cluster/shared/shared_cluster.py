@@ -36,6 +36,11 @@ dictConfig(logging_config)
 LOG = logging.getLogger(__name__)
 
 
+class Colors:
+    DEFAULT = "yellow"
+    SUCCESS = "green"
+    ERROR   = "red"
+
 class Node(object):
     def __init__(self, type, config):
         self._type          = type
@@ -132,9 +137,9 @@ class Server(Node):
                               self._host,
                               bridge_addr,
                               self._vm_conf_script.split('/')[-1],
-                              30))
+                              self.get_slaves_number() * 10)) # timeout in seconds
 
-        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("VMs were started", "red")))
+        LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("VMs were started", Colors.SUCCESS)))
 
     def configure_vms(self, vm_start, suffix, cluster_ip_addresses):
         ## mc2e -> ./configure_vms.sh yes 3 1 '-first' 'node_setup.sh' '10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4'
@@ -154,26 +159,26 @@ class Server(Node):
                               cluster_ip_addresses))
 
 
-        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("VMs were configured", "red")))
+        LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("VMs were configured", Colors.SUCCESS)))
 
     def delete(self, vm_start, vxlan_start, suffix):
         # sudo ./clear.sh yes 3 1 40 '-first'
+        # sudo ./clear.sh no  4 4 44 '-first'
         
         # Transfer script for cluster removing to server
         self._connection.put(self._cl_del_script,
                              os.path.join(self._work_dir, "cluster", self._cl_del_script.split('/')[-1]))
 
-        self._connection.run("cd %s && bash ./%s '%s' %d %d %d '%s' %d %d %d '%s' '%s' '%s' '%s' '%s' %d" %
-                             (os.path.join(self._work_dir, "cluster"),
-                              self._cl_del_script.split('/')[-1],
-                              "yes" if self._master else "no",
-                              self.get_slaves_number(),
-                              vm_start,
-                              vxlan_start,
-                              suffix))
+        with self._connection.cd(os.path.join(self._work_dir, "cluster")):
+            self._connection.run("sudo bash ./%s '%s' %d %d %d '%s'" %
+                                  (self._cl_del_script.split('/')[-1],
+                                  "yes" if self._master else "no",
+                                  self.get_slaves_number(),
+                                  vm_start,
+                                  vxlan_start,
+                                  suffix))
 
-        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("VMs were deleted", "red")))
-
+        LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("VMs were deleted", Colors.SUCCESS)))
 class Bridge(Node):
     def __init__(self, config, create_script, delete_script):
         super(Bridge, self).__init__("BRIDGE", config)
@@ -190,7 +195,7 @@ class Bridge(Node):
         self._connection.run("cd %s && bash ./%s 0 0 br-cluster '' '' ''" % 
                             (self._work_dir, self._create_script.split('/')[-1]))
 
-        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Bridge were created", "red")))
+        LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("Bridge were created", Colors.SUCCESS)))
 
     def delete(self, vxlan_start, amount):
         # bridge down -> ./linux_bridge_down.sh <vxlan_start> <amount> br-cluster
@@ -199,10 +204,10 @@ class Bridge(Node):
         self._connection.put(self._delete_script,
                              os.path.join(self._work_dir, self._delete_script.split('/')[-1]))
 
-        self._connection.run("cd %s && bash ./%s %d %d br-cluster '' '' ''" % 
+        self._connection.run("cd %s && bash ./%s %d %d br-cluster" % 
                             (self._work_dir, self._delete_script.split('/')[-1], vxlan_start, amount))
 
-        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Bridge and vxlan interfaces were deleted", "red")))
+        LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("Bridge and vxlan interfaces were deleted", Colors.SUCCESS)))
 
 
     def connect(self, vxlan_start, vxlan_num, ip_addr):
@@ -217,7 +222,7 @@ class Bridge(Node):
                              self.host,
                              ip_addr))
 
-        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("%s was connected to bridge" % ip_addr, "red")))
+        LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("%s was connected to bridge" % ip_addr, Colors.SUCCESS)))
 
 class Cluster:
     def __init__(self, name, config, vms_start_script=None, cl_conf_script=None, vm_conf_script=None, br_script=None,
@@ -267,7 +272,7 @@ class Cluster:
                 - configure NFS
         """
 
-        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Cluster creation was started", "red")))
+        LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("Cluster creation was started", Colors.SUCCESS)))
 
         self._bridge.create()
 
@@ -300,10 +305,10 @@ class Cluster:
             server.configure_vms(vm_start, '-' + self._name, cluster_ip_addresses)
             vm_start += server.get_slaves_number()
 
-        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Cluster was created", "red")))
+        LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("Cluster was created", Colors.SUCCESS)))
 
     def delete(self):
-        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Cluster removing was started", "red")))
+        LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("Cluster removing was started", Colors.SUCCESS)))
 
         # STEP 1: Delete all virtual machines on each server
         vm_start    = 1
@@ -318,7 +323,7 @@ class Cluster:
         total_vm_num = vxlan_start - self._vxlan_start
         self._bridge.delete(self._vxlan_start, total_vm_num+1)
 
-        LOG.debug("%s %s" % (colored(self.log_prefix(), "green"), colored("Cluster was deleted", "red")))
+        LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("Cluster was deleted", Colors.SUCCESS)))
         
 
 def create_cluster(args):
@@ -350,7 +355,7 @@ def create_cluster(args):
 
         cluster.create()
     except Exception as e:
-        LOG.error("Cannot create cluster: %s" % e)
+        LOG.error(colored("Cannot create cluster: %s" % e), Colors.ERROR)
 
 def delete_cluster(args):
     name             = args["name"]
@@ -372,7 +377,7 @@ def delete_cluster(args):
 
         cluster.delete()
     except Exception as e:
-        LOG.error("Cannot delete cluster: %s" % e)
+        LOG.error(colored("Cannot delete cluster: %s" % e), Colors.ERROR)
 
 
 """
@@ -443,10 +448,10 @@ if __name__ == "__main__":
     elif args["command"] == 'delete':
         delete_cluster(args)
 
-    LOG.debug("Well done!!!")
+    LOG.debug(colored("Well done!!!", "green"))
 
 
-# Manual cluster creation
+# Manual cluster creation with 4 VMs on one server and 4 VMs on another
 ## COPY to server scripts:
 ## '../../vm_configure/node_setup.sh'
 ## './start_vms.sh'
