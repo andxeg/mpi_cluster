@@ -22,6 +22,7 @@
 On each physical server where you will start virtual machine run:
 ```bash
 sudo apt install cloud-image-utils qemu-kvm
+sudo apt-get install qemu-kvm libvirt-bin virtinst ubuntu-vm-builder bridge-utils cpu-checker
 sudo apt install sshpass
 ```
 
