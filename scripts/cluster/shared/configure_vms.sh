@@ -61,7 +61,7 @@ do
 
     ssh-keygen -f "/home/"$USER"/.ssh/known_hosts" -R "$addr"
 
-    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -t ubuntu@"$addr" "sudo su - mpiuser -c \"cd /home/mpiuser/scripts && sudo "./""$CONFIG_SCRIPT" $name $SUFFIX $CLUSTER_IP_ADDRESSES_COMMA \""
+    sshpass -p "ubuntu" ssh -o StrictHostKeyChecking=no -T ubuntu@"$addr" "sudo su - mpiuser -c \"cd /home/mpiuser/scripts && sudo "./""$CONFIG_SCRIPT" $name $SUFFIX $CLUSTER_IP_ADDRESSES_COMMA \""
 
 done
 

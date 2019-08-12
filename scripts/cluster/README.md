@@ -68,7 +68,7 @@ sudo apt install sshpass
 On local machine where you will start script `./shared/shared_cluster.py` you should run:
 ```bash
 sudo apt install build-essential libssl-dev libffi-dev python3-dev python3-pip
-sudo pip install cryptography tqdm==2.2.3 termcolor
+sudo pip install cryptography tqdm==2.2.3 termcolor fabric2
 
 ```
 

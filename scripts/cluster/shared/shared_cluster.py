@@ -9,8 +9,6 @@ import collections
 from copy import deepcopy
 from fabric2 import Connection
 from logging.config import dictConfig
-
-from tqdm import tqdm
 from termcolor import colored
 
 
@@ -79,6 +77,7 @@ class Server(Node):
         super(Server, self).__init__("SERVER", config)
         self._cluster_name = name
         self._resources    = config["resources"]
+        self._timeout      = int(config.get("timeout", 10)) # timeout in seconds for start one VM
 
         self._vms_start_script = vms_start_script
         self._vm_conf_script   = vm_conf_script
@@ -137,7 +136,7 @@ class Server(Node):
                               self._host,
                               bridge_addr,
                               self._vm_conf_script.split('/')[-1],
-                              self.get_slaves_number() * 10)) # timeout in seconds
+                              self._vm_number * self._timeout))
 
         LOG.debug("%s %s" % (colored(self.log_prefix(), Colors.DEFAULT), colored("VMs were started", Colors.SUCCESS)))
 
@@ -406,12 +405,12 @@ if __name__ == "__main__":
                             " -vcs ../../vm_configure/node_setup.sh"
                             " -bcs ../remote/linux_bridge_up.sh"
                             " -cpu 1"
-                            " -ram 1024" % sys.argv[0],
+                            " -ram 1024 2>&1 | tee output.file" % sys.argv[0],
                 "Example: python %s delete"
                             " -na  first"
                             " -co  test_config.json"
                             " -cds ../remote/clear.sh"
-                            " -bds ../remote/linux_bridge_down.sh" % sys.argv[0]
+                            " -bds ../remote/linux_bridge_down.sh 2>&1 | tee output.file" % sys.argv[0]
     ]
 
     ap = argparse.ArgumentParser(description="Create MPI cluster with several servers.\n" + '\n'.join(examples),

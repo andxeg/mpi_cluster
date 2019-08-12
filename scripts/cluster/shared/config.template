@@ -11,6 +11,7 @@
                 "hdd": "50"
             },
             "vm_num": <number: optional parameter>,
+            "timeout": <number, seconds: optional parameter| wait for start one VM>,
             "path": "",
             "ext-iface": ""
         },
@@ -25,6 +26,7 @@
                 "hdd": "50"
             },
             "vm_num": <number: optional parameter>,
+            "timeout": <number, seconds: optional parameter| wait for start one VM>,
             "path": "",
             "ext-iface": ""
         }
