@@ -7,8 +7,8 @@ if [ $# -ne 5 ]; then
                     <start slave number>
                     <start_vxlan_id>
                     <suffix for nodes names>\n" "$0"
-    printf "Example #1: ./clear.sh yes 3 1 40 '-first'\n"
-    printf "Example #2: ./clear.sh no  4 4 44 '-first'\n"
+    printf "Example #1: %s yes 3 1 40 '-first'\n" "$0"
+    printf "Example #2: %s no  4 4 44 '-first'\n" "$0"
     exit 1
 fi
 

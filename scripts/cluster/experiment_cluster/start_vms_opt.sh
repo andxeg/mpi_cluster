@@ -1,23 +1,20 @@
 #!/bin/bash
 
-if [ $# -ne 14 ]; then
+if [ $# -ne 11 ]; then
     printf "error in input parameters\n"
     printf "type %s <with or without master>
                     <number of slaves>
                     <start slave number>
-                    <start_vxlan_id>
                     <suffix for node name>
                     <start ip addresses in subnet 10.0.0.0/24>
                     <virtual machine RAM>
                     <virtual machine vCPUs>
                     <directory with images>
-                    <external interface>
-                    <local ip>
-                    <remote ip>
+                    <cluster bridge name>
                     <script for vm configure>
                     <timeout for vms start>\n" "$0"
-    printf "Example #1: %s yes 15 1 40 '-first' 1 1024 1 '/home/arccn/mpi' 'br-ext' 172.30.11.100 192.168.131.36 'node_setup.sh' 30\n" "$0"
-    printf "Example #2: %s no 16 16 56 '-first' 17 1024 1 '/home/arccn/mpi' 'br-ext' 192.168.131.124 192.168.131.36 'node_setup.sh' 30\n" "$0"
+    printf "Example #1: %s yes 15 1 '-first' 1 1024 1 '/home/arccn/mpi' 'cluster-br' 'node_setup.sh' 30\n" "$0"
+    printf "Example #2: %s no 16 16 '-first' 17 1024 1 '/home/arccn/mpi' 'cluster-br' 'node_setup.sh' 30\n" "$0"
     exit 1
 fi
 
@@ -25,19 +22,16 @@ fi
 MASTER=$1 # --master yes or --master no
 SLAVES_NUM=$2
 SLAVE_START_NUM=$3
-VXLAN_ID_START=$4
-SUFFIX="$5" # for example "-1", "-first", "-second"
-START_CLUSTER_ADDR=$6
-VM_RAM=$7
-VM_CPU=$8
-VM_IMAGE_PREFIX="$9"/"xenial-server-cloudimg-amd64-disk1-"
-BASE_CONFIG="$9"/"/config"
+SUFFIX="$4" # for example "-1", "-first", "-second"
+START_CLUSTER_ADDR=$5
+VM_RAM=$6
+VM_CPU=$7
+VM_IMAGE_PREFIX="$8"/"xenial-server-cloudimg-amd64-disk1-"
+BASE_CONFIG="$8"/"/config"
 
-DEV=${10} # for example "br-ext"
-LOCAL_IP=${11}   # local server with virtual machines
-REMOTE_IP=${12} # remote server with ovs or linux bridge
-CONFIG_SCRIPT=${13} # script for configuring cluster nodes
-TIMEOUT=${14}
+CLUSTER_BRIDGE_NAME=${9} # for example "br-ext"
+CONFIG_SCRIPT=${10} # script for configuring cluster nodes
+TIMEOUT=${11}
 
 
 CLUSTER_NET="10.0.0."
@@ -64,7 +58,10 @@ mkdir -p $CONFIG_DIR
 mkdir -p $IMAGES_DIR
 
 # ====================== CREATE CONFIG, IMAGE and START NODES =================
-id=0
+
+# Start default network
+sudo virsh net-start default
+
 LANG=en_US
 for node in $NODES
 do
@@ -73,28 +70,12 @@ do
         image="slave"
     fi
 
-    # create bridge
-    vxlan=$((VXLAN_ID_START+id))
-    vxlan_iface="vxlan"$vxlan
-    vxlan_bridge="br-vxlan"$vxlan
-    id=$((id+1))
-
-    # printf "id -> '%d'; iface -> '%s'; bridge -> '%s'\n" $id $vxlan_iface $vxlan_bridge
-
-    sudo ip link add name $vxlan_iface type vxlan id $vxlan dev $DEV remote $REMOTE_IP local $LOCAL_IP dstport 4789
-    sudo ip link add $vxlan_bridge type bridge
-    sudo ip link set $vxlan_iface master $vxlan_bridge
-    sudo ip link set $vxlan_iface up
-    sudo ip link set $vxlan_bridge up  
-
-    printf "bridge '%s' was created\n" "$vxlan_bridge"
-
     # create virtual machine
     printf "'%s' creation was started with image '%s'\n" "$node" "$image"
 
     cloud-localds $CONFIG_DIR/"config-""$node"".img" $BASE_CONFIG
     qemu-img create -f qcow2 -b $VM_IMAGE_PREFIX"$image"".qcow2" $IMAGES_DIR/"$node"".img"
-    sudo virt-install --name $node --ram $VM_RAM --vcpus=$VM_CPU --os-type=linux --os-variant=ubuntu16.04 --virt-type=kvm --hvm --disk $IMAGES_DIR/"$node"".img",device=disk,bus=virtio --disk $CONFIG_DIR/"config-""$node"".img",device=cdrom --network network=default --network bridge="$vxlan_bridge" --graphics none --import --quiet --noautoconsole
+    sudo virt-install --name $node --ram $VM_RAM --vcpus=$VM_CPU --os-type=linux --os-variant=ubuntu16.04 --virt-type=kvm --hvm --disk $IMAGES_DIR/"$node"".img",device=disk,bus=virtio --disk $CONFIG_DIR/"config-""$node"".img",device=cdrom --network network=default --network bridge="$CLUSTER_BRIDGE_NAME" --graphics none --import --quiet --noautoconsole
 
     printf "'%s' was created\n\n" "$node"
 done
